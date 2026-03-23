@@ -1,4 +1,5 @@
 import type { RenderContext } from '../../types.js';
+import type { NonstopAccountUsage } from '../../nonstop.js';
 import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
 import { critical, label, custom, getQuotaColor, quotaBar, formatPct, RESET } from '../colors.js';
@@ -18,6 +19,10 @@ export function renderUsageLine(ctx: RenderContext): string | null {
 
   if (getProviderLabel(ctx.stdin)) {
     return null;
+  }
+
+  if (ctx.nonstopInfo?.expanded) {
+    return renderExpandedUsage(ctx);
   }
 
   const accountPrefix = formatAccountPrefix(ctx);
@@ -78,6 +83,92 @@ export function renderUsageLine(ctx: RenderContext): string | null {
   }
 
   return `${accountPrefix}${usageLabel} ${fiveHourPart}`;
+}
+
+function renderExpandedUsage(ctx: RenderContext): string | null {
+  const display = ctx.config?.display;
+  const colors = ctx.config?.colors;
+  const usageLabel = label('Usage', colors);
+  const usageBarEnabled = display?.usageBarEnabled ?? true;
+  const barWidth = getAdaptiveBarWidth();
+
+  const lines: string[] = [];
+
+  // Current account from stdin
+  const currentName = ctx.nonstopInfo!.currentAccount ?? '?';
+  const currentPrefix = `${custom(currentName, colors)} `;
+
+  if (isLimitReached(ctx.usageData!)) {
+    const resetTime = ctx.usageData!.fiveHour === 100
+      ? formatResetTime(ctx.usageData!.fiveHourResetAt)
+      : formatResetTime(ctx.usageData!.sevenDayResetAt);
+    lines.push(`${currentPrefix}${usageLabel} ${critical(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`, colors)}`);
+  } else {
+    lines.push(formatAccountUsageLine(
+      currentPrefix,
+      usageLabel,
+      ctx.usageData!.fiveHour,
+      ctx.usageData!.sevenDay,
+      ctx.usageData!.fiveHourResetAt,
+      ctx.usageData!.sevenDayResetAt,
+      { colors, usageBarEnabled, barWidth },
+    ));
+  }
+
+  // Other accounts from cache
+  for (const account of ctx.nonstopInfo!.otherAccounts) {
+    const prefix = `${custom(account.name, colors)} `;
+    if (account.fiveHour === null && account.sevenDay === null) {
+      lines.push(`${prefix}${usageLabel} ${label('--', colors)}`);
+      continue;
+    }
+    lines.push(formatAccountUsageLine(
+      prefix,
+      usageLabel,
+      account.fiveHour,
+      account.sevenDay,
+      account.fiveHourResetAt,
+      account.sevenDayResetAt,
+      { colors, usageBarEnabled, barWidth },
+    ));
+  }
+
+  return lines.join('\n');
+}
+
+function formatAccountUsageLine(
+  prefix: string,
+  usageLabel: string,
+  fiveHour: number | null,
+  sevenDay: number | null,
+  fiveHourResetAt: Date | null,
+  sevenDayResetAt: Date | null,
+  opts: { colors: RenderContext['config']['colors']; usageBarEnabled: boolean; barWidth: number },
+): string {
+  const { colors, usageBarEnabled, barWidth } = opts;
+
+  const fiveHourPart = formatUsageWindowPart({
+    label: '5h',
+    percent: fiveHour,
+    resetAt: fiveHourResetAt,
+    colors,
+    usageBarEnabled,
+    barWidth,
+  });
+
+  if (sevenDay !== null) {
+    const sevenDayPart = formatUsageWindowPart({
+      label: '7d',
+      percent: sevenDay,
+      resetAt: sevenDayResetAt,
+      colors,
+      usageBarEnabled,
+      barWidth,
+    });
+    return `${prefix}${usageLabel} ${fiveHourPart} | ${sevenDayPart}`;
+  }
+
+  return `${prefix}${usageLabel} ${fiveHourPart}`;
 }
 
 function formatAccountPrefix(ctx: RenderContext): string {
