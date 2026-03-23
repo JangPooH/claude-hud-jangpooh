@@ -382,11 +382,8 @@ function renderExpanded(ctx: RenderContext): Array<{ line: string; isActivity: b
 
     const nextElement = elementOrder[index + 1];
     if (
-      !ctx.nonstopInfo?.expanded &&
-      (
-        (element === 'context' && nextElement === 'usage' && !seen.has('usage'))
-        || (element === 'usage' && nextElement === 'context' && !seen.has('context'))
-      )
+      (element === 'context' && nextElement === 'usage' && !seen.has('usage'))
+      || (element === 'usage' && nextElement === 'context' && !seen.has('context'))
     ) {
       seen.add(element);
       seen.add(nextElement);
