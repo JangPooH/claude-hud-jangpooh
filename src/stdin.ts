@@ -39,7 +39,7 @@ export function getTotalTokens(stdin: StdinData): number {
 function getNativePercent(stdin: StdinData): number | null {
   const nativePercent = stdin.context_window?.used_percentage;
   if (typeof nativePercent === 'number' && !Number.isNaN(nativePercent)) {
-    return Math.min(100, Math.max(0, Math.round(nativePercent)));
+    return Math.min(100, Math.max(0, nativePercent));
   }
   return null;
 }
@@ -58,7 +58,7 @@ export function getContextPercent(stdin: StdinData): number {
   }
 
   const totalTokens = getTotalTokens(stdin);
-  return Math.min(100, Math.round((totalTokens / size) * 100));
+  return Math.min(100, (totalTokens / size) * 100);
 }
 
 export function getBufferedPercent(stdin: StdinData): number {
@@ -85,7 +85,7 @@ export function getBufferedPercent(stdin: StdinData): number {
   const scale = Math.min(1, Math.max(0, (rawRatio - LOW) / (HIGH - LOW)));
   const buffer = size * AUTOCOMPACT_BUFFER_PERCENT * scale;
 
-  return Math.min(100, Math.round(((totalTokens + buffer) / size) * 100));
+  return Math.min(100, ((totalTokens + buffer) / size) * 100);
 }
 
 export function getModelName(stdin: StdinData): string {
@@ -123,7 +123,7 @@ function parseRateLimitPercent(value: number | null | undefined): number | null 
     return null;
   }
 
-  return Math.round(Math.min(100, Math.max(0, value)));
+  return Math.min(100, Math.max(0, value));
 }
 
 function parseRateLimitResetAt(value: number | null | undefined): Date | null {

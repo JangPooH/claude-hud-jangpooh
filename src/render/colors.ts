@@ -129,20 +129,38 @@ export function getQuotaColor(percent: number, colors?: Partial<HudColorOverride
   return resolveAnsi(colors?.usage, BRIGHT_BLUE);
 }
 
+const PARTIAL_CHARS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
+function buildBar(percent: number, width: number): string {
+  const exact = (percent / 100) * width;
+  const full = Math.floor(exact);
+  const partialIdx = Math.round((exact - full) * 8);
+
+  if (partialIdx === 0) {
+    return '█'.repeat(full) + DIM + '░'.repeat(width - full);
+  }
+  if (partialIdx === 8) {
+    return '█'.repeat(full + 1) + DIM + '░'.repeat(width - full - 1);
+  }
+  return '█'.repeat(full) + PARTIAL_CHARS[partialIdx] + DIM + '░'.repeat(width - full - 1);
+}
+
+export function formatPct(n: number): string {
+  const fixed = n.toFixed(1);
+  const [int, dec] = fixed.split('.');
+  return `${int.padStart(2, '0')}.${dec}%`;
+}
+
 export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const filled = Math.round((safePercent / 100) * safeWidth);
-  const empty = safeWidth - filled;
   const color = getQuotaColor(safePercent, colors);
-  return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+  return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }
 
 export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const filled = Math.round((safePercent / 100) * safeWidth);
-  const empty = safeWidth - filled;
   const color = getContextColor(safePercent, colors);
-  return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+  return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }
