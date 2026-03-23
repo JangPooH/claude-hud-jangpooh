@@ -1,7 +1,7 @@
 import type { RenderContext } from '../../types.js';
 import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
-import { critical, label, getQuotaColor, quotaBar, RESET } from '../colors.js';
+import { critical, label, custom, getQuotaColor, quotaBar, RESET } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
 
 export function renderUsageLine(ctx: RenderContext): string | null {
@@ -20,13 +20,14 @@ export function renderUsageLine(ctx: RenderContext): string | null {
     return null;
   }
 
+  const accountPrefix = formatAccountPrefix(ctx);
   const usageLabel = label('Usage', colors);
 
   if (isLimitReached(ctx.usageData)) {
     const resetTime = ctx.usageData.fiveHour === 100
       ? formatResetTime(ctx.usageData.fiveHourResetAt)
       : formatResetTime(ctx.usageData.sevenDayResetAt);
-    return `${usageLabel} ${critical(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`, colors)}`;
+    return `${accountPrefix}${usageLabel} ${critical(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`, colors)}`;
   }
 
   const threshold = display?.usageThreshold ?? 0;
@@ -52,7 +53,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
       barWidth,
       forceLabel: true,
     });
-    return `${usageLabel} ${weeklyOnlyPart}`;
+    return `${accountPrefix}${usageLabel} ${weeklyOnlyPart}`;
   }
 
   const fiveHourPart = formatUsageWindowPart({
@@ -73,10 +74,20 @@ export function renderUsageLine(ctx: RenderContext): string | null {
       usageBarEnabled,
       barWidth,
     });
-    return `${usageLabel} ${fiveHourPart} | ${sevenDayPart}`;
+    return `${accountPrefix}${usageLabel} ${fiveHourPart} | ${sevenDayPart}`;
   }
 
-  return `${usageLabel} ${fiveHourPart}`;
+  return `${accountPrefix}${usageLabel} ${fiveHourPart}`;
+}
+
+function formatAccountPrefix(ctx: RenderContext): string {
+  const info = ctx.nonstopInfo;
+  if (!info) return '';
+
+  const colors = ctx.config?.colors;
+  const name = info.currentAccount ?? '?';
+  const others = info.otherCount > 0 ? ` ${custom(`+${info.otherCount}`, colors)}` : '';
+  return `${custom(name, colors)}${others} `;
 }
 
 function formatUsagePercent(percent: number | null, colors?: RenderContext['config']['colors']): string {

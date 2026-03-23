@@ -31,7 +31,7 @@ export interface HudColorOverrides {
   project: HudColorValue;
   git: HudColorValue;
   gitBranch: HudColorValue;
-  label: HudColorValue;
+  label?: HudColorValue;
   custom: HudColorValue;
 }
 
@@ -129,7 +129,7 @@ export const DEFAULT_CONFIG: HudConfig = {
     project: 'yellow',
     git: 'magenta',
     gitBranch: 'cyan',
-    label: 'dim',
+
     custom: 208,
   },
 };

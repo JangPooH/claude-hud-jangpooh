@@ -1,6 +1,7 @@
 import type { HudColorName, HudColorValue, HudColorOverrides } from '../config.js';
 
 export const RESET = '\x1b[0m';
+const DEFAULT_TEXT = RESET;
 
 const DIM = '\x1b[2m';
 const RED = '\x1b[31m';
@@ -101,7 +102,7 @@ export function gitBranch(text: string, colors?: Partial<HudColorOverrides>): st
 }
 
 export function label(text: string, colors?: Partial<HudColorOverrides>): string {
-  return withOverride(text, colors?.label, DIM);
+  return withOverride(text, colors?.label, DEFAULT_TEXT);
 }
 
 export function custom(text: string, colors?: Partial<HudColorOverrides>): string {

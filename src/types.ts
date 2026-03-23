@@ -1,5 +1,6 @@
 import type { HudConfig } from './config.js';
 import type { GitStatus } from './git.js';
+import type { NonstopInfo } from './nonstop.js';
 
 export interface StdinData {
   transcript_path?: string;
@@ -97,4 +98,5 @@ export interface RenderContext {
   config: HudConfig;
   extraLabel: string | null;
   claudeCodeVersion?: string;
+  nonstopInfo: NonstopInfo | null;
 }
