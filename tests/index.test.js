@@ -168,6 +168,90 @@ test('main includes usageData in render context', async () => {
   assert.deepEqual(renderedContext?.usageData, mockUsageData);
 });
 
+test('main prefers stdin-native rate_limits over the usage API fallback', async () => {
+  let renderedContext;
+  let usageCalls = 0;
+  let fallbackPlanCalls = 0;
+
+  await main({
+    readStdin: async () => ({
+      model: { display_name: 'Opus' },
+      rate_limits: {
+        five_hour: { used_percentage: 21.9, resets_at: 1710000000 },
+        seven_day: { used_percentage: 55.2, resets_at: 1710600000 },
+      },
+    }),
+    parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
+    countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
+    getGitStatus: async () => null,
+    getUsage: async () => {
+      usageCalls += 1;
+      return {
+        planName: 'ShouldNotRender',
+        fiveHour: 99,
+        sevenDay: 99,
+        fiveHourResetAt: null,
+        sevenDayResetAt: null,
+      };
+    },
+    getUsagePlanNameFallback: () => {
+      fallbackPlanCalls += 1;
+      return 'Max';
+    },
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.equal(usageCalls, 0);
+  assert.equal(fallbackPlanCalls, 1);
+  assert.deepEqual(renderedContext?.usageData, {
+    planName: 'Max',
+    fiveHour: 21,
+    sevenDay: 55,
+    fiveHourResetAt: new Date(1710000000 * 1000),
+    sevenDayResetAt: new Date(1710600000 * 1000),
+  });
+});
+
+test('main falls back to usage API when stdin rate_limits are absent', async () => {
+  let renderedContext;
+  let usageCalls = 0;
+  let fallbackPlanCalls = 0;
+  const mockUsageData = {
+    planName: 'Team',
+    fiveHour: null,
+    sevenDay: 45,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  };
+
+  await main({
+    readStdin: async () => ({
+      model: { display_name: 'Opus' },
+      context_window: { context_window_size: 100, current_usage: { input_tokens: 10 } },
+    }),
+    parseTranscript: async () => ({ tools: [], agents: [], todos: [] }),
+    countConfigs: async () => ({ claudeMdCount: 0, rulesCount: 0, mcpCount: 0, hooksCount: 0 }),
+    getGitStatus: async () => null,
+    getUsage: async () => {
+      usageCalls += 1;
+      return mockUsageData;
+    },
+    getUsagePlanNameFallback: () => {
+      fallbackPlanCalls += 1;
+      return 'Max';
+    },
+    render: (ctx) => {
+      renderedContext = ctx;
+    },
+  });
+
+  assert.equal(usageCalls, 1);
+  assert.equal(fallbackPlanCalls, 0);
+  assert.deepEqual(renderedContext?.usageData, mockUsageData);
+});
+
 test('main includes Claude Code version in render context only when enabled', async () => {
   let renderedContext;
   let lookupCalls = 0;

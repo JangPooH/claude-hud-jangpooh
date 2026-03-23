@@ -12,6 +12,7 @@ import { createServer } from 'node:net';
 let tempHome = null;
 let cacheTempHome = null;
 let getUsage;
+let getUsagePlanNameFallback;
 let clearCache;
 let getKeychainServiceName;
 let getKeychainServiceNames;
@@ -49,6 +50,7 @@ before(async () => {
   ensureUsageApiDistIsCurrent();
   ({
     getUsage,
+    getUsagePlanNameFallback,
     clearCache,
     getKeychainServiceName,
     getKeychainServiceNames,
@@ -1590,6 +1592,38 @@ describe('getProxyUrl', () => {
     assert.equal(getProxyUrl('api.anthropic.com', {
       HTTPS_PROXY: 'not a url',
     }), null);
+  });
+});
+
+describe('getUsagePlanNameFallback', () => {
+  test('prefers cached planName over credentials file state', async () => {
+    const homeDir = await createTempHome();
+
+    try {
+      await writeCredentials(homeDir, buildCredentials({ subscriptionType: 'claude_max_2024' }));
+      await getUsage({
+        homeDir: () => homeDir,
+        fetchApi: async () => buildApiResult(),
+        now: () => 1000,
+        readKeychain: () => null,
+      });
+
+      await writeCredentials(homeDir, buildCredentials({ subscriptionType: 'claude_team_2024' }));
+      assert.equal(getUsagePlanNameFallback(homeDir), 'Max');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  test('falls back to credentials file when usage cache is missing', async () => {
+    const homeDir = await createTempHome();
+
+    try {
+      await writeCredentials(homeDir, buildCredentials({ subscriptionType: 'claude_team_2024' }));
+      assert.equal(getUsagePlanNameFallback(homeDir), 'Team');
+    } finally {
+      await rm(homeDir, { recursive: true, force: true });
+    }
   });
 });
 

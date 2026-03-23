@@ -1,9 +1,9 @@
-import { readStdin } from './stdin.js';
+import { readStdin, getUsageFromStdin } from './stdin.js';
 import { parseTranscript } from './transcript.js';
 import { render } from './render/index.js';
 import { countConfigs } from './config-reader.js';
 import { getGitStatus } from './git.js';
-import { getUsage } from './usage-api.js';
+import { getUsage, getUsagePlanNameFallback } from './usage-api.js';
 import { loadConfig } from './config.js';
 import { parseExtraCmdArg, runExtraCmd } from './extra-cmd.js';
 import { getClaudeCodeVersion } from './version.js';
@@ -14,10 +14,12 @@ import { realpathSync } from 'node:fs';
 
 export type MainDeps = {
   readStdin: typeof readStdin;
+  getUsageFromStdin: typeof getUsageFromStdin;
   parseTranscript: typeof parseTranscript;
   countConfigs: typeof countConfigs;
   getGitStatus: typeof getGitStatus;
   getUsage: typeof getUsage;
+  getUsagePlanNameFallback: typeof getUsagePlanNameFallback;
   loadConfig: typeof loadConfig;
   parseExtraCmdArg: typeof parseExtraCmdArg;
   runExtraCmd: typeof runExtraCmd;
@@ -31,10 +33,12 @@ export type MainDeps = {
 export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
   const deps: MainDeps = {
     readStdin,
+    getUsageFromStdin,
     parseTranscript,
     countConfigs,
     getGitStatus,
     getUsage,
+    getUsagePlanNameFallback,
     loadConfig,
     parseExtraCmdArg,
     runExtraCmd,
@@ -70,14 +74,23 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       : null;
 
     // Only fetch usage if enabled in config (replaces env var requirement)
-    const usageData = config.display.showUsage !== false
-      ? await deps.getUsage({
+    let usageData: RenderContext['usageData'] = null;
+    if (config.display.showUsage !== false) {
+      const stdinUsage = deps.getUsageFromStdin(stdin);
+      if (stdinUsage) {
+        const fallbackPlanName = deps.getUsagePlanNameFallback();
+        usageData = fallbackPlanName
+          ? { ...stdinUsage, planName: fallbackPlanName }
+          : stdinUsage;
+      } else {
+        usageData = await deps.getUsage({
           ttls: {
             cacheTtlMs: config.usage.cacheTtlSeconds * 1000,
             failureCacheTtlMs: config.usage.failureCacheTtlSeconds * 1000,
           },
-        })
-      : null;
+        });
+      }
+    }
 
     const extraCmd = deps.parseExtraCmdArg();
     const extraLabel = extraCmd ? await deps.runExtraCmd(extraCmd) : null;

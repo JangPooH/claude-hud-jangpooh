@@ -20,6 +20,16 @@ export interface StdinData {
     used_percentage?: number | null;
     remaining_percentage?: number | null;
   };
+  rate_limits?: {
+    five_hour?: {
+      used_percentage?: number | null;
+      resets_at?: number | null;
+    } | null;
+    seven_day?: {
+      used_percentage?: number | null;
+      resets_at?: number | null;
+    } | null;
+  } | null;
 }
 
 export interface ToolEntry {

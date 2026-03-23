@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _setCreateReadStreamForTests, parseTranscript } from '../dist/transcript.js';
 import { countConfigs } from '../dist/config-reader.js';
-import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, isBedrockModelId } from '../dist/stdin.js';
+import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getUsageFromStdin, isBedrockModelId } from '../dist/stdin.js';
 import * as fs from 'node:fs';
 
 function restoreEnvVar(name, value) {
@@ -213,6 +213,57 @@ test('native percentage falls back when NaN', () => {
     },
   });
   assert.equal(percent, 28); // falls back to raw calculation
+});
+
+test('getUsageFromStdin returns null when rate_limits are missing', () => {
+  assert.equal(getUsageFromStdin({}), null);
+  assert.equal(getUsageFromStdin({ rate_limits: null }), null);
+});
+
+test('getUsageFromStdin parses official Claude Code rate_limits payload', () => {
+  const usage = getUsageFromStdin({
+    rate_limits: {
+      five_hour: {
+        used_percentage: 7.999999999,
+        resets_at: 1710000000,
+      },
+      seven_day: {
+        used_percentage: 102.4,
+        resets_at: 1710600000,
+      },
+    },
+  }, 'Max');
+
+  assert.deepEqual(usage, {
+    planName: 'Max',
+    fiveHour: 7,
+    sevenDay: 100,
+    fiveHourResetAt: new Date(1710000000 * 1000),
+    sevenDayResetAt: new Date(1710600000 * 1000),
+  });
+});
+
+test('getUsageFromStdin falls back to generic label and rejects invalid fields', () => {
+  const usage = getUsageFromStdin({
+    rate_limits: {
+      five_hour: {
+        used_percentage: -10,
+        resets_at: 0,
+      },
+      seven_day: {
+        used_percentage: Number.NaN,
+        resets_at: -1,
+      },
+    },
+  });
+
+  assert.deepEqual(usage, {
+    planName: 'Claude',
+    fiveHour: 0,
+    sevenDay: null,
+    fiveHourResetAt: null,
+    sevenDayResetAt: null,
+  });
 });
 
 test('getModelName precedence: trimmed display name, then normalized bedrock label, then raw id, then fallback', () => {

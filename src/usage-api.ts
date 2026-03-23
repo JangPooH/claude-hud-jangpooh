@@ -199,6 +199,18 @@ function readLastGoodData(homeDir: string): UsageData | null {
   }
 }
 
+function readCachedPlanName(homeDir: string): string | null {
+  try {
+    const cachePath = getCachePath(homeDir);
+    if (!fs.existsSync(cachePath)) return null;
+    const content = fs.readFileSync(cachePath, 'utf8');
+    const cache: CacheFile = JSON.parse(content);
+    return cache.data.planName ?? cache.lastGoodData?.planName ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function readCache(homeDir: string, now: number, ttls: CacheTtls): UsageData | null {
   const cache = readCacheState(homeDir, now, ttls);
   return cache?.isFresh ? cache.data : null;
@@ -828,6 +840,20 @@ function getPlanName(subscriptionType: string): string | null {
   if (!subscriptionType || lower.includes('api')) return null;
   // Unknown subscription type - show it capitalized
   return subscriptionType.charAt(0).toUpperCase() + subscriptionType.slice(1);
+}
+
+export function getUsagePlanNameFallback(homeDir: string = os.homedir()): string | null {
+  const cachedPlanName = readCachedPlanName(homeDir);
+  if (cachedPlanName) {
+    return cachedPlanName;
+  }
+
+  const subscriptionType = readFileSubscriptionType(homeDir);
+  if (!subscriptionType) {
+    return null;
+  }
+
+  return getPlanName(subscriptionType);
 }
 
 /** Parse utilization value, clamping to 0-100 and handling NaN/Infinity */
