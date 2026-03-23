@@ -307,7 +307,7 @@ Technical documentation for agents who need to understand, modify, or debug Clau
 
   <issue name="Context percentage seems wrong">
     <cause>Data comes directly from Claude Code - it's accurate</cause>
-    <solution>The percentage is (input_tokens / context_window_size) * 100</solution>
+    <solution>Claude HUD uses Claude Code's native context_window.used_percentage when available, then falls back to token-based calculation for older versions.</solution>
   </issue>
 
   <issue name="Tools/agents not showing">
@@ -327,7 +327,7 @@ Technical documentation for agents who need to understand, modify, or debug Clau
     transcript_path?: string
     cwd?: string
     model?: { id?: string, display_name?: string }
-    context_window?: { context_window_size?: number, current_usage?: { input_tokens?: number } }
+    context_window?: { used_percentage?: number, context_window_size?: number, current_usage?: { input_tokens?: number } }
   </interface>
 
   <interface name="ToolEntry">
