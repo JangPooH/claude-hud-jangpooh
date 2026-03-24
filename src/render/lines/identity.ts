@@ -1,6 +1,6 @@
 import type { RenderContext } from '../../types.js';
 import { getContextPercent, getBufferedPercent, getTotalTokens } from '../../stdin.js';
-import { coloredBar, label, getContextColor, formatPct, RESET } from '../colors.js';
+import { coloredBar, label, getContextColor, RESET } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
 
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
@@ -60,14 +60,14 @@ function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent'
 
   if (mode === 'both') {
     if (size > 0) {
-      return `${formatPct(percent)} (${formatTokens(totalTokens)}/${formatTokens(size)})`;
+      return `${percent}% (${formatTokens(totalTokens)}/${formatTokens(size)})`;
     }
-    return formatPct(percent);
+    return `${percent}%`;
   }
 
   if (mode === 'remaining') {
-    return formatPct(Math.max(0, 100 - percent));
+    return `${Math.max(0, 100 - percent)}%`;
   }
 
-  return formatPct(percent);
+  return `${percent}%`;
 }

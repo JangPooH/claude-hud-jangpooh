@@ -1,7 +1,7 @@
 import type { RenderContext } from '../../types.js';
 import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
-import { critical, label, custom, getQuotaColor, quotaBar, formatPct, RESET } from '../colors.js';
+import { critical, label, custom, getQuotaColor, quotaBar, RESET } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
 
 export function renderUsageLine(ctx: RenderContext): string | null {
@@ -95,7 +95,7 @@ function formatUsagePercent(percent: number | null, colors?: RenderContext['conf
     return label('--', colors);
   }
   const color = getQuotaColor(percent, colors);
-  return `${color}${formatPct(percent)}${RESET}`;
+  return `${color}${percent}%${RESET}`;
 }
 
 function formatUsageWindowPart({

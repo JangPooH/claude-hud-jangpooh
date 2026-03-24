@@ -2,7 +2,7 @@ import type { RenderContext } from '../types.js';
 import { isLimitReached } from '../types.js';
 import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
 import { getOutputSpeed } from '../speed-tracker.js';
-import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, red, getContextColor, getQuotaColor, quotaBar, formatPct, custom as customColor, RESET } from './colors.js';
+import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, red, getContextColor, getQuotaColor, quotaBar, custom as customColor, RESET } from './colors.js';
 import { getAdaptiveBarWidth } from '../utils/terminal.js';
 
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
@@ -256,16 +256,16 @@ function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent'
 
   if (mode === 'both') {
     if (size > 0) {
-      return `${formatPct(percent)} (${formatTokens(totalTokens)}/${formatTokens(size)})`;
+      return `${percent}% (${formatTokens(totalTokens)}/${formatTokens(size)})`;
     }
-    return formatPct(percent);
+    return `${percent}%`;
   }
 
   if (mode === 'remaining') {
-    return formatPct(Math.max(0, 100 - percent));
+    return `${Math.max(0, 100 - percent)}%`;
   }
 
-  return formatPct(percent);
+  return `${percent}%`;
 }
 
 function formatUsagePercent(percent: number | null, colors?: RenderContext['config']['colors']): string {
@@ -273,7 +273,7 @@ function formatUsagePercent(percent: number | null, colors?: RenderContext['conf
     return label('--', colors);
   }
   const color = getQuotaColor(percent, colors);
-  return `${color}${formatPct(percent)}${RESET}`;
+  return `${color}${percent}%${RESET}`;
 }
 
 function formatUsageWindowPart({
