@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as readline from 'readline';
 import { createHash } from 'node:crypto';
 import { getHudPluginDir } from './claude-config-dir.js';
-import type { TranscriptData, ToolEntry, AgentEntry, TodoItem } from './types.js';
+import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, TurnCost } from './types.js';
 
 interface TranscriptLine {
   timestamp?: string;
@@ -13,6 +13,12 @@ interface TranscriptLine {
   customTitle?: string;
   message?: {
     content?: ContentBlock[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    };
   };
 }
 
@@ -46,6 +52,9 @@ interface SerializedTranscriptData {
   todos: TodoItem[];
   sessionStart?: string;
   sessionName?: string;
+  turnCosts?: TurnCost[];
+  sessionCost?: number;
+  userTurnCount?: number;
 }
 
 interface TranscriptCacheFile {
@@ -91,6 +100,9 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     todos: data.todos.map((todo) => ({ ...todo })),
     sessionStart: data.sessionStart?.toISOString(),
     sessionName: data.sessionName,
+    turnCosts: data.turnCosts,
+    sessionCost: data.sessionCost,
+    userTurnCount: data.userTurnCount,
   };
 }
 
@@ -109,6 +121,9 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     todos: data.todos.map((todo) => ({ ...todo })),
     sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
     sessionName: data.sessionName,
+    turnCosts: data.turnCosts ?? [],
+    sessionCost: data.sessionCost ?? 0,
+    userTurnCount: data.userTurnCount ?? 0,
   };
 }
 
@@ -151,6 +166,9 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     tools: [],
     agents: [],
     todos: [],
+    turnCosts: [],
+    sessionCost: 0,
+    userTurnCount: 0,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -231,6 +249,21 @@ function processEntry(
 
   if (!result.sessionStart && entry.timestamp) {
     result.sessionStart = timestamp;
+  }
+
+  if (entry.type === 'user') {
+    result.userTurnCount += 1;
+  }
+
+  if (entry.type === 'assistant' && entry.message?.usage) {
+    const u = entry.message.usage;
+    const inp = u.input_tokens ?? 0;
+    const out = u.output_tokens ?? 0;
+    const cc = u.cache_creation_input_tokens ?? 0;
+    const cr = u.cache_read_input_tokens ?? 0;
+    const cost = (inp * 3.0 + out * 15.0 + cc * 3.75 + cr * 0.30) / 1_000_000;
+    result.turnCosts.push({ inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost });
+    result.sessionCost += cost;
   }
 
   const content = entry.message?.content;

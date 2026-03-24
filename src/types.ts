@@ -76,12 +76,23 @@ export function isLimitReached(data: UsageData): boolean {
   return data.fiveHour === 100 || data.sevenDay === 100;
 }
 
+export interface TurnCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  cost: number;
+}
+
 export interface TranscriptData {
   tools: ToolEntry[];
   agents: AgentEntry[];
   todos: TodoItem[];
   sessionStart?: Date;
   sessionName?: string;
+  turnCosts: TurnCost[];
+  sessionCost: number;
+  userTurnCount: number;
 }
 
 export interface RenderContext {

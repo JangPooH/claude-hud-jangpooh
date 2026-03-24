@@ -11,6 +11,7 @@ import {
   renderEnvironmentLine,
   renderUsageLine,
   renderMemoryLine,
+  renderCostLine,
 } from './lines/index.js';
 import { dim, RESET } from './colors.js';
 
@@ -347,6 +348,8 @@ function renderElementLine(ctx: RenderContext, element: HudElement): string | nu
       return renderUsageLine(ctx);
     case 'memory':
       return renderMemoryLine(ctx);
+    case 'cost':
+      return renderCostLine(ctx);
     case 'environment':
       return renderEnvironmentLine(ctx);
     case 'tools':
