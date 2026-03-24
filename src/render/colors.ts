@@ -81,6 +81,10 @@ export function dim(text: string): string {
   return colorize(text, DIM);
 }
 
+export function brightBlue(text: string): string {
+  return colorize(text, BRIGHT_BLUE);
+}
+
 export function claudeOrange(text: string): string {
   return colorize(text, CLAUDE_ORANGE);
 }
