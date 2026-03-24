@@ -8,7 +8,7 @@ import { parseExtraCmdArg, runExtraCmd } from './extra-cmd.js';
 import { getClaudeCodeVersion } from './version.js';
 import { getMemoryUsage } from './memory.js';
 import { getNonstopInfo } from './nonstop.js';
-import { writeCostHistory, writeBaseline } from './cost-history.js';
+import { writeCostHistory, writeBaseline, resolveBaseline } from './cost-history.js';
 import type { RenderContext } from './types.js';
 import { fileURLToPath } from 'node:url';
 import { realpathSync, writeFileSync } from 'node:fs';
@@ -101,10 +101,19 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     const nonstopInfo = await deps.getNonstopInfo(stdin.transcript_path);
 
     if (transcriptPath) {
-      writeBaseline(transcriptPath, stdin.cost?.total_cost_usd ?? null);
+      const baseline = resolveBaseline(transcriptPath, stdin.cost?.total_cost_usd ?? null, homedir());
+      writeBaseline(transcriptPath, baseline);
     }
     if (transcriptPath && transcript.turnCosts.length > 0) {
-      writeCostHistory(transcriptPath, transcript.turnCosts, transcript.userTurnCount, stdin.cost?.total_cost_usd ?? null);
+      writeCostHistory(
+        transcriptPath,
+        transcript.turnCosts,
+        transcript.userTurnCount,
+        stdin.cost?.total_cost_usd ?? null,
+        deps.now(),
+        stdin.rate_limits?.five_hour?.used_percentage ?? null,
+        stdin.rate_limits?.seven_day?.used_percentage ?? null,
+      );
     }
 
     const ctx: RenderContext = {
