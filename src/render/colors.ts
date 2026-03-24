@@ -138,6 +138,38 @@ export function quotaBar(percent: number, width: number = 10, colors?: Partial<H
   return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
 }
 
+function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>): string {
+  // Use a visually adjacent/contrasting color derived from the quota color at this usage level
+  if (percent >= 90) return resolveAnsi(colors?.critical, '\x1b[91m');  // bright red (quota: red)
+  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[93m'); // bright yellow (quota: bright magenta)
+  return resolveAnsi(colors?.usage, CYAN);                                  // cyan (quota: bright blue)
+}
+
+export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
+  const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
+  const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
+  const safeTime = Number.isFinite(timePercent) ? Math.min(100, Math.max(0, timePercent)) : 0;
+
+  const usageBlocks = Math.round((safePercent / 100) * safeWidth);
+  // timePos < 0 means no marker (window already expired)
+  const timePos = safeTime < 100 ? Math.min(safeWidth - 1, Math.floor((safeTime / 100) * safeWidth)) : -1;
+  const color = getQuotaColor(safePercent, colors);
+  const markerColor = getTimeMarkerColor(safePercent, colors);
+
+  let result = '';
+  for (let i = 0; i < safeWidth; i++) {
+    if (i === timePos) {
+      const char = i < usageBlocks ? '█' : '░';
+      result += `${markerColor}${char}${RESET}`;
+    } else if (i < usageBlocks) {
+      result += `${color}█${RESET}`;
+    } else {
+      result += `${DIM}░${RESET}`;
+    }
+  }
+  return result;
+}
+
 export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;

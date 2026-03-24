@@ -3,13 +3,24 @@ import type { GitStatus } from './git.js';
 import type { NonstopInfo } from './nonstop.js';
 
 export interface StdinData {
+  session_id?: string;
   transcript_path?: string;
   cwd?: string;
+  version?: string;
   model?: {
     id?: string;
     display_name?: string;
   };
+  cost?: {
+    total_cost_usd?: number;
+    total_duration_ms?: number;
+    total_api_duration_ms?: number;
+    total_lines_added?: number;
+    total_lines_removed?: number;
+  };
   context_window?: {
+    total_input_tokens?: number;
+    total_output_tokens?: number;
     context_window_size?: number;
     current_usage?: {
       input_tokens?: number;
@@ -77,11 +88,15 @@ export function isLimitReached(data: UsageData): boolean {
 }
 
 export interface TurnCost {
+  model?: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   cost: number;
+  userTurn?: number;
+  userMessage?: string;
+  tools?: string[];
 }
 
 export interface TranscriptData {
@@ -93,6 +108,7 @@ export interface TranscriptData {
   turnCosts: TurnCost[];
   sessionCost: number;
   userTurnCount: number;
+  unknownPricingModels: string[];
 }
 
 export interface RenderContext {

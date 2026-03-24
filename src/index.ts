@@ -8,9 +8,13 @@ import { parseExtraCmdArg, runExtraCmd } from './extra-cmd.js';
 import { getClaudeCodeVersion } from './version.js';
 import { getMemoryUsage } from './memory.js';
 import { getNonstopInfo } from './nonstop.js';
+import { writeCostHistory, writeBaseline } from './cost-history.js';
 import type { RenderContext } from './types.js';
 import { fileURLToPath } from 'node:url';
-import { realpathSync } from 'node:fs';
+import { realpathSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { getHudPluginDir } from './claude-config-dir.js';
 
 export type MainDeps = {
   readStdin: typeof readStdin;
@@ -61,6 +65,12 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       return;
     }
 
+    // Save raw stdin sample for inspection (overwrite each time)
+    try {
+      const samplePath = join(getHudPluginDir(homedir()), 'stdin-sample.json');
+      writeFileSync(samplePath, JSON.stringify(stdin, null, 2), 'utf8');
+    } catch { /* non-fatal */ }
+
     const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await deps.parseTranscript(transcriptPath);
 
@@ -89,6 +99,13 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       : null;
 
     const nonstopInfo = await deps.getNonstopInfo(stdin.transcript_path);
+
+    if (transcriptPath) {
+      writeBaseline(transcriptPath, stdin.cost?.total_cost_usd ?? null);
+    }
+    if (transcriptPath && transcript.turnCosts.length > 0) {
+      writeCostHistory(transcriptPath, transcript.turnCosts, transcript.userTurnCount, stdin.cost?.total_cost_usd ?? null);
+    }
 
     const ctx: RenderContext = {
       stdin,

@@ -13,7 +13,8 @@ import {
   renderMemoryLine,
   renderCostLine,
 } from './lines/index.js';
-import { dim, RESET } from './colors.js';
+import { dim, warning, RESET } from './colors.js';
+import { getUpdateScriptPath } from '../pricing.js';
 
 // eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERN = /^\x1b\[[0-9;]*m/;
@@ -459,6 +460,13 @@ export function render(ctx: RenderContext): void {
     }
 
     lines.push(...activityLines);
+  }
+
+  const unknownModels = ctx.transcript.unknownPricingModels;
+  if (unknownModels?.length) {
+    const modelList = unknownModels.join(', ');
+    lines.unshift(warning(`⚠ Unknown pricing: ${modelList} — execute claude req: claude-hud 플러그인에서 pricing.json에 ${modelList}를 추가하고, pricing.json에 있는 모든 model의 pricing table을 최신 정보로 업데이트`));
+
   }
 
   const physicalLines = lines.flatMap(line => line.split('\n'));

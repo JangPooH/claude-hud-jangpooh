@@ -5,6 +5,7 @@ import * as readline from 'readline';
 import { createHash } from 'node:crypto';
 import { getHudPluginDir } from './claude-config-dir.js';
 import type { TranscriptData, ToolEntry, AgentEntry, TodoItem, TurnCost } from './types.js';
+import { getPricing } from './pricing.js';
 
 interface TranscriptLine {
   timestamp?: string;
@@ -12,6 +13,7 @@ interface TranscriptLine {
   slug?: string;
   customTitle?: string;
   message?: {
+    model?: string;
     content?: ContentBlock[];
     usage?: {
       input_tokens?: number;
@@ -26,6 +28,7 @@ interface ContentBlock {
   type: string;
   id?: string;
   name?: string;
+  text?: string;
   input?: Record<string, unknown>;
   tool_use_id?: string;
   is_error?: boolean;
@@ -55,6 +58,7 @@ interface SerializedTranscriptData {
   turnCosts?: TurnCost[];
   sessionCost?: number;
   userTurnCount?: number;
+  unknownPricingModels?: string[];
 }
 
 interface TranscriptCacheFile {
@@ -103,6 +107,7 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     turnCosts: data.turnCosts,
     sessionCost: data.sessionCost,
     userTurnCount: data.userTurnCount,
+    unknownPricingModels: data.unknownPricingModels,
   };
 }
 
@@ -124,6 +129,7 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     turnCosts: data.turnCosts ?? [],
     sessionCost: data.sessionCost ?? 0,
     userTurnCount: data.userTurnCount ?? 0,
+    unknownPricingModels: data.unknownPricingModels ?? [],
   };
 }
 
@@ -169,6 +175,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     turnCosts: [],
     sessionCost: 0,
     userTurnCount: 0,
+    unknownPricingModels: [],
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -193,6 +200,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   let customTitle: string | undefined;
 
   let parsedCleanly = false;
+  const parseState = { pendingUserMessage: undefined as string | undefined };
 
   try {
     const fileStream = createReadStreamImpl(transcriptPath);
@@ -211,7 +219,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
         } else if (typeof entry.slug === 'string') {
           latestSlug = entry.slug;
         }
-        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result);
+        processEntry(entry, toolMap, agentMap, taskIdToIndex, latestTodos, result, parseState);
       } catch {
         // Skip malformed lines
       }
@@ -243,7 +251,8 @@ function processEntry(
   agentMap: Map<string, AgentEntry>,
   taskIdToIndex: Map<string, number>,
   latestTodos: TodoItem[],
-  result: TranscriptData
+  result: TranscriptData,
+  parseState: { pendingUserMessage: string | undefined }
 ): void {
   const timestamp = entry.timestamp ? new Date(entry.timestamp) : new Date();
 
@@ -252,7 +261,17 @@ function processEntry(
   }
 
   if (entry.type === 'user') {
-    result.userTurnCount += 1;
+    const content = entry.message?.content;
+    let userText: string | undefined;
+    if (typeof content === 'string') {
+      userText = content;
+    } else if (Array.isArray(content)) {
+      userText = content.find((b) => b.type === 'text')?.text;
+    }
+    if (userText !== undefined) {
+      result.userTurnCount += 1;
+      parseState.pendingUserMessage = userText.slice(0, 120);
+    }
   }
 
   if (entry.type === 'assistant' && entry.message?.usage) {
@@ -261,8 +280,16 @@ function processEntry(
     const out = u.output_tokens ?? 0;
     const cc = u.cache_creation_input_tokens ?? 0;
     const cr = u.cache_read_input_tokens ?? 0;
-    const cost = (inp * 3.0 + out * 15.0 + cc * 3.75 + cr * 0.30) / 1_000_000;
-    result.turnCosts.push({ inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost });
+    const { pricing, isUnknown } = getPricing(entry.message.model);
+    const cost = (inp * pricing.inputPerMTok + out * pricing.outputPerMTok + cc * pricing.cacheWritePerMTok + cr * pricing.cacheReadPerMTok) / 1_000_000;
+    const toolNames = Array.isArray(entry.message.content)
+      ? entry.message.content.filter((b) => b.type === 'tool_use' && b.name).map((b) => b.name!)
+      : [];
+    result.turnCosts.push({ model: entry.message.model, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+    if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model)) {
+      result.unknownPricingModels.push(entry.message.model);
+    }
+    parseState.pendingUserMessage = undefined;
     result.sessionCost += cost;
   }
 

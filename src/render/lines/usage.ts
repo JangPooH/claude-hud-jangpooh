@@ -1,7 +1,7 @@
 import type { RenderContext } from '../../types.js';
 import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
-import { critical, label, custom, getQuotaColor, quotaBar, RESET } from '../colors.js';
+import { critical, label, custom, getQuotaColor, quotaBar, quotaBarWithTime, RESET } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
 
 export function renderUsageLine(ctx: RenderContext): string | null {
@@ -43,11 +43,15 @@ export function renderUsageLine(ctx: RenderContext): string | null {
   const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
   const barWidth = getAdaptiveBarWidth();
 
+  const fiveHourWindowMs = 5 * 60 * 60 * 1000;
+  const sevenDayWindowMs = 7 * 24 * 60 * 60 * 1000;
+
   if (fiveHour === null && sevenDay !== null) {
     const weeklyOnlyPart = formatUsageWindowPart({
       label: '7d',
       percent: sevenDay,
       resetAt: ctx.usageData.sevenDayResetAt,
+      timePercent: calcTimePercent(ctx.usageData.sevenDayResetAt, sevenDayWindowMs),
       colors,
       usageBarEnabled,
       barWidth,
@@ -60,6 +64,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
     label: '5h',
     percent: fiveHour,
     resetAt: ctx.usageData.fiveHourResetAt,
+    timePercent: calcTimePercent(ctx.usageData.fiveHourResetAt, fiveHourWindowMs),
     colors,
     usageBarEnabled,
     barWidth,
@@ -70,6 +75,7 @@ export function renderUsageLine(ctx: RenderContext): string | null {
       label: '7d',
       percent: sevenDay,
       resetAt: ctx.usageData.sevenDayResetAt,
+      timePercent: calcTimePercent(ctx.usageData.sevenDayResetAt, sevenDayWindowMs),
       colors,
       usageBarEnabled,
       barWidth,
@@ -98,10 +104,17 @@ function formatUsagePercent(percent: number | null, colors?: RenderContext['conf
   return `${color}${percent}%${RESET}`;
 }
 
+function calcTimePercent(resetAt: Date | null, windowMs: number): number | null {
+  if (!resetAt) return null;
+  const elapsed = windowMs - (resetAt.getTime() - Date.now());
+  return Math.min(100, Math.max(0, (elapsed / windowMs) * 100));
+}
+
 function formatUsageWindowPart({
   label,
   percent,
   resetAt,
+  timePercent,
   colors,
   usageBarEnabled,
   barWidth,
@@ -110,6 +123,7 @@ function formatUsageWindowPart({
   label: '5h' | '7d';
   percent: number | null;
   resetAt: Date | null;
+  timePercent: number | null;
   colors?: RenderContext['config']['colors'];
   usageBarEnabled: boolean;
   barWidth: number;
@@ -119,9 +133,12 @@ function formatUsageWindowPart({
   const reset = formatResetTime(resetAt);
 
   if (usageBarEnabled) {
+    const bar = timePercent !== null
+      ? quotaBarWithTime(percent ?? 0, timePercent, barWidth, colors)
+      : quotaBar(percent ?? 0, barWidth, colors);
     const body = reset
-      ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} (resets in ${reset})`
-      : `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay}`;
+      ? `${bar} ${usageDisplay} (resets in ${reset})`
+      : `${bar} ${usageDisplay}`;
     return forceLabel ? `${label}: ${body}` : body;
   }
 
