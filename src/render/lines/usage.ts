@@ -1,8 +1,9 @@
 import type { RenderContext } from '../../types.js';
 import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
-import { critical, label, custom, getQuotaColor, quotaBar, quotaBarWithTime, RESET } from '../colors.js';
+import { critical, label, custom } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
+import { formatResetTime, formatUsagePercent, formatUsageWindowPart } from '../format-utils.js';
 
 export function renderUsageLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -96,75 +97,9 @@ function formatAccountPrefix(ctx: RenderContext): string {
   return `${custom(name, colors)}${others} `;
 }
 
-function formatUsagePercent(percent: number | null, colors?: RenderContext['config']['colors']): string {
-  if (percent === null) {
-    return label('--', colors);
-  }
-  const color = getQuotaColor(percent, colors);
-  return `${color}${percent}%${RESET}`;
-}
-
 function calcTimePercent(resetAt: Date | null, windowMs: number): number | null {
   if (!resetAt) return null;
   const elapsed = windowMs - (resetAt.getTime() - Date.now());
   return Math.min(100, Math.max(0, (elapsed / windowMs) * 100));
 }
 
-function formatUsageWindowPart({
-  label,
-  percent,
-  resetAt,
-  timePercent,
-  colors,
-  usageBarEnabled,
-  barWidth,
-  forceLabel = false,
-}: {
-  label: '5h' | '7d';
-  percent: number | null;
-  resetAt: Date | null;
-  timePercent: number | null;
-  colors?: RenderContext['config']['colors'];
-  usageBarEnabled: boolean;
-  barWidth: number;
-  forceLabel?: boolean;
-}): string {
-  const usageDisplay = formatUsagePercent(percent, colors);
-  const reset = formatResetTime(resetAt);
-
-  if (usageBarEnabled) {
-    const bar = timePercent !== null
-      ? quotaBarWithTime(percent ?? 0, timePercent, barWidth, colors)
-      : quotaBar(percent ?? 0, barWidth, colors);
-    const body = reset
-      ? `${bar} ${usageDisplay} (resets in ${reset})`
-      : `${bar} ${usageDisplay}`;
-    return forceLabel ? `${label}: ${body}` : body;
-  }
-
-  return reset
-    ? `${label}: ${usageDisplay} (resets in ${reset})`
-    : `${label}: ${usageDisplay}`;
-}
-
-function formatResetTime(resetAt: Date | null): string {
-  if (!resetAt) return '';
-  const now = new Date();
-  const diffMs = resetAt.getTime() - now.getTime();
-  if (diffMs <= 0) return '';
-
-  const diffMins = Math.ceil(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    if (remHours > 0) return `${days}d ${remHours}h`;
-    return `${days}d`;
-  }
-
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}

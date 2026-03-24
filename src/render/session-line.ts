@@ -2,7 +2,8 @@ import type { RenderContext } from '../types.js';
 import { isLimitReached } from '../types.js';
 import { getContextPercent, getBufferedPercent, getModelName, getProviderLabel, getTotalTokens } from '../stdin.js';
 import { getOutputSpeed } from '../speed-tracker.js';
-import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, red, getContextColor, getQuotaColor, quotaBar, custom as customColor, RESET } from './colors.js';
+import { coloredBar, critical, git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, red, getContextColor, custom as customColor, RESET } from './colors.js';
+import { formatTokens, formatResetTime, formatUsagePercent, formatUsageWindowPart } from './format-utils.js';
 import { getAdaptiveBarWidth } from '../utils/terminal.js';
 
 const DEBUG = process.env.DEBUG?.includes('claude-hud') || process.env.DEBUG === '*';
@@ -233,16 +234,6 @@ export function renderSessionLine(ctx: RenderContext): string {
   return line;
 }
 
-function formatTokens(n: number): string {
-  if (n >= 1000000) {
-    return `${(n / 1000000).toFixed(1)}M`;
-  }
-  if (n >= 1000) {
-    return `${(n / 1000).toFixed(0)}k`;
-  }
-  return n.toString();
-}
-
 function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent' | 'tokens' | 'remaining' | 'both'): string {
   const totalTokens = getTotalTokens(ctx.stdin);
   const size = ctx.stdin.context_window?.context_window_size ?? 0;
@@ -268,64 +259,3 @@ function formatContextValue(ctx: RenderContext, percent: number, mode: 'percent'
   return `${percent}%`;
 }
 
-function formatUsagePercent(percent: number | null, colors?: RenderContext['config']['colors']): string {
-  if (percent === null) {
-    return label('--', colors);
-  }
-  const color = getQuotaColor(percent, colors);
-  return `${color}${percent}%${RESET}`;
-}
-
-function formatUsageWindowPart({
-  label,
-  percent,
-  resetAt,
-  colors,
-  usageBarEnabled,
-  barWidth,
-  forceLabel = false,
-}: {
-  label: '5h' | '7d';
-  percent: number | null;
-  resetAt: Date | null;
-  colors?: RenderContext['config']['colors'];
-  usageBarEnabled: boolean;
-  barWidth: number;
-  forceLabel?: boolean;
-}): string {
-  const usageDisplay = formatUsagePercent(percent, colors);
-  const reset = formatResetTime(resetAt);
-
-  if (usageBarEnabled) {
-    const body = reset
-      ? `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay} (${reset} / ${label})`
-      : `${quotaBar(percent ?? 0, barWidth, colors)} ${usageDisplay}`;
-    return forceLabel ? `${label}: ${body}` : body;
-  }
-
-  return reset
-    ? `${label}: ${usageDisplay} (${reset})`
-    : `${label}: ${usageDisplay}`;
-}
-
-function formatResetTime(resetAt: Date | null): string {
-  if (!resetAt) return '';
-  const now = new Date();
-  const diffMs = resetAt.getTime() - now.getTime();
-  if (diffMs <= 0) return '';
-
-  const diffMins = Math.ceil(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remHours = hours % 24;
-    if (remHours > 0) return `${days}d ${remHours}h`;
-    return `${days}d`;
-  }
-
-  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-}

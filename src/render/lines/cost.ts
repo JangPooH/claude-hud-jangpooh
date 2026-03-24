@@ -1,19 +1,14 @@
 import * as fs from 'node:fs';
 import type { RenderContext } from '../../types.js';
 import { label, dim, brightBlue, cyan, RESET } from '../colors.js';
-import { getCostHistoryPath, getCostHistoryDetailPath } from '../../cost-history.js';
+import { getCostHistoryDetailPath, calcEffectiveInput } from '../../cost-history.js';
+import { formatTokens } from '../format-utils.js';
 
 function formatCost(cost: number): string {
   if (cost < 0.0001) return '$0.00';
   if (cost < 0.001) return `$${cost.toFixed(5)}`;
   if (cost < 0.01) return `$${cost.toFixed(4)}`;
   return `$${cost.toFixed(3)}`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 interface CostHistoryState {
@@ -72,12 +67,12 @@ export function renderCostLine(ctx: RenderContext): string | null {
   const currentUserTurn = Math.max(...turnCosts.map((t, i) => t.userTurn ?? i + 1));
   const currentTurnCosts = turnCosts.filter((t, i) => (t.userTurn ?? i + 1) === currentUserTurn);
   const turnCcst = currentTurnCosts.reduce((s, t) => s + t.cost, 0);
-  const turnEi = currentTurnCosts.reduce((s, t) => s + t.inputTokens + t.cacheCreationTokens * 1.25 + t.cacheReadTokens * 0.1, 0);
+  const turnEi = currentTurnCosts.reduce((s, t) => s + calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens), 0);
   const turnOut = currentTurnCosts.reduce((s, t) => s + t.outputTokens, 0);
 
   // Session aggregate
   const sessCcst = turnCosts.reduce((s, t) => s + t.cost, 0);
-  const sessEi = turnCosts.reduce((s, t) => s + t.inputTokens + t.cacheCreationTokens * 1.25 + t.cacheReadTokens * 0.1, 0);
+  const sessEi = turnCosts.reduce((s, t) => s + calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens), 0);
   const sessOut = turnCosts.reduce((s, t) => s + t.outputTokens, 0);
 
   // Native cost: NET = session total from baseline, [+] = this turn's increment

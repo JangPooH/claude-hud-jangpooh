@@ -2,6 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { TurnCost } from './types.js';
 
+export function calcEffectiveInput(inputTokens: number, cacheCreationTokens: number, cacheReadTokens: number): number {
+  return inputTokens + cacheCreationTokens * 1.25 + cacheReadTokens * 0.1;
+}
+
 export function getCostHistoryPath(transcriptPath: string): string {
   const dir = path.dirname(transcriptPath);
   const base = path.basename(transcriptPath, '.jsonl');
@@ -87,7 +91,7 @@ export function writeCostHistory(
         o: costs.reduce((s, t) => s + t.outputTokens, 0),
         cc,
         cr,
-        ei: i + cc * 1.25 + cr * 0.1,
+        ei: calcEffectiveInput(i, cc, cr),
         ccst: costs.reduce((s, t) => s + t.cost, 0),
         ...(cumNativeCost != null ? { cum_ncst: cumNativeCost } : {}),
       });
@@ -117,7 +121,7 @@ export function writeCostHistory(
           o: t.outputTokens,
           cc: t.cacheCreationTokens,
           cr: t.cacheReadTokens,
-          ei: t.inputTokens + t.cacheCreationTokens * 1.25 + t.cacheReadTokens * 0.1,
+          ei: calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens),
           ccst: t.cost,
           ...(cumNativeCost != null ? { cum_ncst: cumNativeCost } : {}),
         }));
