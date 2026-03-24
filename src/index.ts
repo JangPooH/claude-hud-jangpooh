@@ -74,7 +74,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await deps.parseTranscript(transcriptPath);
 
-    const { claudeMdCount, rulesCount, mcpCount, hooksCount } = await deps.countConfigs(stdin.cwd);
+    const { claudeMdCount, claudeMdFiles, rulesCount, mcpCount, hooksCount } = await deps.countConfigs(stdin.cwd);
 
     const config = await deps.loadConfig();
     const gitStatus = config.gitStatus.enabled
@@ -111,6 +111,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
       stdin,
       transcript,
       claudeMdCount,
+      claudeMdFiles,
       rulesCount,
       mcpCount,
       hooksCount,

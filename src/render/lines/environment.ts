@@ -1,5 +1,5 @@
 import type { RenderContext } from '../../types.js';
-import { label } from '../colors.js';
+import { label, dim } from '../colors.js';
 
 export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -17,8 +17,13 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
 
   const parts: string[] = [];
 
-  if (ctx.claudeMdCount > 0) {
-    parts.push(`${ctx.claudeMdCount} CLAUDE.md`);
+  if (ctx.claudeMdFiles.length > 0) {
+    for (const file of ctx.claudeMdFiles) {
+      const count = file.tokens >= 1000
+        ? `${(file.tokens / 1000).toFixed(1)}k`
+        : `${file.tokens}`;
+      parts.push(dim(`${file.displayPath} (${count})`));
+    }
   }
 
   if (ctx.rulesCount > 0) {
