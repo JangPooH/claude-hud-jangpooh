@@ -7,7 +7,7 @@ export type LineLayoutType = 'compact' | 'expanded';
 
 export type AutocompactBufferMode = 'enabled' | 'disabled';
 export type ContextValueMode = 'percent' | 'tokens' | 'remaining' | 'both';
-export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos' | 'cost';
+export type HudElement = 'project' | 'context' | 'usage' | 'memory' | 'environment' | 'tools' | 'agents' | 'todos' | 'cost' | 'turnCounter';
 export type HudColorName =
   | 'dim'
   | 'red'
@@ -42,6 +42,7 @@ export const DEFAULT_ELEMENT_ORDER: HudElement[] = [
   'cost',
   'memory',
   'environment',
+  'turnCounter',
   'tools',
   'agents',
   'todos',

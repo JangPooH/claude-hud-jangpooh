@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 
 export interface NonstopInfo {
   currentAccount: string | null;
+  currentAccountType: string | null;
   otherCount: number;
 }
 
@@ -14,6 +15,12 @@ interface NonstopAccount {
 
 interface NonstopConfig {
   accounts?: NonstopAccount[];
+}
+
+interface ClaudeJson {
+  oauthAccount?: {
+    hasExtraUsageEnabled?: boolean | null;
+  } | null;
 }
 
 const NONSTOP_CONFIG_PATH = join(homedir(), '.claude-nonstop', 'config.json');
@@ -27,7 +34,18 @@ async function readNonstopConfig(): Promise<NonstopConfig | null> {
   }
 }
 
-function matchAccount(transcriptPath: string, accounts: NonstopAccount[]): string | null {
+async function readAccountType(configDir: string): Promise<string> {
+  try {
+    const raw = await readFile(join(resolve(configDir), '.claude.json'), 'utf8');
+    const data = JSON.parse(raw) as ClaudeJson;
+    if (!data.oauthAccount) return 'api';
+    return data.oauthAccount.hasExtraUsageEnabled ? 'max' : 'pro';
+  } catch {
+    return 'api';
+  }
+}
+
+function matchAccount(transcriptPath: string, accounts: NonstopAccount[]): NonstopAccount | null {
   if (!transcriptPath) return null;
 
   // Sort by configDir length descending so more specific paths match first
@@ -37,7 +55,7 @@ function matchAccount(transcriptPath: string, accounts: NonstopAccount[]): strin
     const dir = resolve(account.configDir);
     const prefix = dir.endsWith('/') ? dir : `${dir}/`;
     if (transcriptPath.startsWith(prefix)) {
-      return account.name;
+      return account;
     }
   }
 
@@ -52,7 +70,8 @@ export async function getNonstopInfo(transcriptPath?: string): Promise<NonstopIn
 
   const accounts = config.accounts;
   const current = transcriptPath ? matchAccount(transcriptPath, accounts) : null;
+  const currentAccountType = current ? await readAccountType(current.configDir) : null;
   const otherCount = accounts.length - 1;
 
-  return { currentAccount: current, otherCount };
+  return { currentAccount: current?.name ?? null, currentAccountType, otherCount };
 }

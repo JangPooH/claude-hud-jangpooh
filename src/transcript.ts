@@ -13,6 +13,7 @@ interface TranscriptLine {
   slug?: string;
   customTitle?: string;
   message?: {
+    id?: string;
     model?: string;
     content?: ContentBlock[];
     usage?: {
@@ -200,7 +201,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
   let customTitle: string | undefined;
 
   let parsedCleanly = false;
-  const parseState = { pendingUserMessage: undefined as string | undefined };
+  const parseState = { pendingUserMessage: undefined as string | undefined, seenMessageIds: new Map<string, number>() };
 
   try {
     const fileStream = createReadStreamImpl(transcriptPath);
@@ -252,7 +253,7 @@ function processEntry(
   taskIdToIndex: Map<string, number>,
   latestTodos: TodoItem[],
   result: TranscriptData,
-  parseState: { pendingUserMessage: string | undefined }
+  parseState: { pendingUserMessage: string | undefined; seenMessageIds: Map<string, number> }
 ): void {
   const timestamp = entry.timestamp ? new Date(entry.timestamp) : new Date();
 
@@ -285,12 +286,23 @@ function processEntry(
     const toolNames = Array.isArray(entry.message.content)
       ? entry.message.content.filter((b) => b.type === 'tool_use' && b.name).map((b) => b.name!)
       : [];
-    result.turnCosts.push({ model: entry.message.model, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+    const msgId = entry.message.id;
+    const existingIdx = msgId ? parseState.seenMessageIds.get(msgId) : undefined;
+    if (existingIdx != null) {
+      // 같은 mid 재등장 → detail log용으로 append (usage/cost 동일, tool_use 블록이 늘어남)
+      // sessionCost는 이미 계산됨 → 추가하지 않음
+      const prev = result.turnCosts[existingIdx];
+      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: prev.userTurn, userMessage: prev.userMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+    } else {
+      const idx = result.turnCosts.length;
+      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+      if (msgId) parseState.seenMessageIds.set(msgId, idx);
+      parseState.pendingUserMessage = undefined;
+      result.sessionCost += cost;
+    }
     if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model)) {
       result.unknownPricingModels.push(entry.message.model);
     }
-    parseState.pendingUserMessage = undefined;
-    result.sessionCost += cost;
   }
 
   const content = entry.message?.content;

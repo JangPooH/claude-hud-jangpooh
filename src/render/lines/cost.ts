@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import type { RenderContext } from '../../types.js';
 import { label, dim, brightBlue, cyan, RESET } from '../colors.js';
-import { getCostHistoryDetailPath, calcEffectiveInput } from '../../cost-history.js';
+import { getCostHistoryDetailPath, calcEffectiveInput, dedupTurnCosts } from '../../cost-history.js';
 import { formatTokens } from '../format-utils.js';
 
 function formatCost(cost: number): string {
@@ -14,13 +14,17 @@ function formatCost(cost: number): string {
 interface CostHistoryState {
   baselineCumNcst: number | null;
   prevTurnCumNcst: number | null;
+  baselineCumApiMs: number | null;
+  prevTurnCumApiMs: number | null;
 }
 
-// cost_history의 cum_ncst는 매 render마다 현재 stdin 값으로 덮어써지므로 차이가 항상 0.
+// cost_history의 cum_ncst/cum_api_ms는 매 render마다 현재 stdin 값으로 덮어써지므로 차이가 항상 0.
 // append-only인 cost_history_detail에서 ut < currentUserTurn인 마지막 항목을 읽어야 정확한 이전 턴 값을 얻을 수 있음.
 function readCostHistoryState(transcriptPath: string, currentUserTurn: number): CostHistoryState {
   let baselineCumNcst: number | null = null;
   let prevTurnCumNcst: number | null = null;
+  let baselineCumApiMs: number | null = null;
+  let prevTurnCumApiMs: number | null = null;
 
   try {
     const detailContent = fs.readFileSync(getCostHistoryDetailPath(transcriptPath), 'utf8');
@@ -29,24 +33,37 @@ function readCostHistoryState(transcriptPath: string, currentUserTurn: number): 
       try {
         const entry = JSON.parse(line) as Record<string, unknown>;
         const ut = entry['ut'];
-        const cumNcst = entry['cum_ncst'];
-        if (ut === 0 && typeof cumNcst === 'number') {
-          baselineCumNcst = cumNcst;
+        const rawNcst = entry['cum_ncst'];
+        const rawApiMs = entry['cum_api_ms'];
+        // cum_ncst는 writeBaseline(숫자)과 writeCostHistory(roundCost→문자열) 두 경로로 저장됨
+        const cumNcst = typeof rawNcst === 'number' ? rawNcst : typeof rawNcst === 'string' ? parseFloat(rawNcst) : NaN;
+        const cumApiMs = typeof rawApiMs === 'number' ? rawApiMs : typeof rawApiMs === 'string' ? parseFloat(rawApiMs) : NaN;
+        if (ut === 0) {
+          if (!isNaN(cumNcst)) baselineCumNcst = cumNcst;
+          if (!isNaN(cumApiMs)) baselineCumApiMs = cumApiMs;
         }
         // 마지막으로 덮어쓰면 해당 ut의 마지막(최신) 항목이 남음
-        if (typeof ut === 'number' && ut > 0 && ut < currentUserTurn && typeof cumNcst === 'number') {
-          prevTurnCumNcst = cumNcst;
+        if (typeof ut === 'number' && ut > 0 && ut < currentUserTurn) {
+          if (!isNaN(cumNcst)) prevTurnCumNcst = cumNcst;
+          if (!isNaN(cumApiMs)) prevTurnCumApiMs = cumApiMs;
         }
       } catch { /* skip malformed */ }
     }
   } catch { /* non-fatal */ }
 
   // 이전 userTurn이 없으면 baseline을 기준으로 사용
-  if (prevTurnCumNcst === null) {
-    prevTurnCumNcst = baselineCumNcst;
-  }
+  if (prevTurnCumNcst === null) prevTurnCumNcst = baselineCumNcst;
+  if (prevTurnCumApiMs === null) prevTurnCumApiMs = baselineCumApiMs;
 
-  return { baselineCumNcst, prevTurnCumNcst };
+  return { baselineCumNcst, prevTurnCumNcst, baselineCumApiMs, prevTurnCumApiMs };
+}
+
+function formatApiDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m${rem}s` : `${m}m`;
 }
 
 export function renderCostLine(ctx: RenderContext): string | null {
@@ -55,11 +72,12 @@ export function renderCostLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  const turnCosts = ctx.transcript.turnCosts;
-  if (!turnCosts || turnCosts.length === 0) {
+  const rawTurnCosts = ctx.transcript.turnCosts;
+  if (!rawTurnCosts || rawTurnCosts.length === 0) {
     return null;
   }
 
+  const turnCosts = dedupTurnCosts(rawTurnCosts);
   const colors = ctx.config?.colors;
   const costLabel = label('💰', colors);
 
@@ -77,22 +95,36 @@ export function renderCostLine(ctx: RenderContext): string | null {
 
   // Native cost: NET = session total from baseline, [+] = this turn's increment
   let netPart = '';
+  let turnApiDuration = '';
+  let sessApiDuration = '';
   const currentCumNcst = ctx.stdin.cost?.total_cost_usd ?? null;
+  const currentCumApiMs = ctx.stdin.cost?.total_api_duration_ms ?? null;
   const transcriptPath = ctx.stdin.transcript_path;
-  if (currentCumNcst != null && transcriptPath) {
-    const { baselineCumNcst, prevTurnCumNcst } = readCostHistoryState(transcriptPath, currentUserTurn);
-    const netCost = baselineCumNcst != null ? currentCumNcst - baselineCumNcst : null;
-    const turnDiff = prevTurnCumNcst != null ? currentCumNcst - prevTurnCumNcst : null;
-    const netStr = netCost != null ? brightBlue(formatCost(netCost)) : '';
-    const diffStr = turnDiff != null ? cyan(`[+${formatCost(turnDiff)}]`) : '';
-    if (netStr || diffStr) {
-      netPart = ` / NET ${netStr}${diffStr ? ` ${diffStr}` : ''}`;
+  if (transcriptPath && (currentCumNcst != null || currentCumApiMs != null)) {
+    const { baselineCumNcst, prevTurnCumNcst, baselineCumApiMs, prevTurnCumApiMs } = readCostHistoryState(transcriptPath, currentUserTurn);
+    if (currentCumNcst != null) {
+      const netCost = baselineCumNcst != null ? currentCumNcst - baselineCumNcst : null;
+      const turnDiff = prevTurnCumNcst != null ? currentCumNcst - prevTurnCumNcst : null;
+      const netStr = netCost != null ? brightBlue(formatCost(netCost)) : '';
+      const diffStr = turnDiff != null ? cyan(`[+${formatCost(turnDiff)}]`) : '';
+      if (netStr || diffStr) {
+        netPart = ` / NET ${netStr}${diffStr ? ` ${diffStr}` : ''}`;
+      }
+    }
+    if (currentCumApiMs != null) {
+      const turnMs = prevTurnCumApiMs != null ? currentCumApiMs - prevTurnCumApiMs : currentCumApiMs;
+      const sessMs = baselineCumApiMs != null ? currentCumApiMs - baselineCumApiMs : currentCumApiMs;
+      if (turnMs >= 0) turnApiDuration = `, ${formatApiDuration(turnMs)}`;
+      if (sessMs >= 0) sessApiDuration = `, ${formatApiDuration(sessMs)}`;
     }
   }
 
-  const turnPart = `Turn ${cyan(formatCost(turnCcst))} ${dim(cyan(`(↑${formatTokens(Math.round(turnEi))}, ↓${formatTokens(turnOut)})`))}`;
   const userTurns = ctx.transcript.userTurnCount;
-  const sessPart = `Session ${brightBlue(formatCost(sessCcst))} ${dim(brightBlue(`(${userTurns} turns, ↑${formatTokens(Math.round(sessEi))}, ↓${formatTokens(sessOut)})`))}`;
+  const curClaudeTurns = currentTurnCosts.length;
+  const totalClaudeTurns = turnCosts.length;
+  const turnPrefix = `#${userTurns}${dim(`:${curClaudeTurns}(~${totalClaudeTurns})`)}`;
+  const turnPart = `Turn ${cyan(formatCost(turnCcst))} ${dim(cyan(`(↑${formatTokens(Math.round(turnEi))}, ↓${formatTokens(turnOut)}${turnApiDuration})`))}`;
+  const sessPart = `Session ${brightBlue(formatCost(sessCcst))} ${dim(brightBlue(`(${userTurns} turns, ↑${formatTokens(Math.round(sessEi))}, ↓${formatTokens(sessOut)}${sessApiDuration})`))}`;
 
   return `${costLabel} ${turnPart} / ${sessPart}${netPart}`;
 }

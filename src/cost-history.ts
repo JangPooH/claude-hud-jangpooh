@@ -24,6 +24,16 @@ export function getCostHistoryDetailPath(transcriptPath: string): string {
   return historyBasePath(transcriptPath, 'cost_history_detail');
 }
 
+/** mid 기준 마지막 occurrence만 남김 (mid 없는 항목은 모두 유지) */
+export function dedupTurnCosts(costs: TurnCost[]): TurnCost[] {
+  const lastIdx = new Map<string, number>();
+  for (let i = 0; i < costs.length; i++) {
+    const mid = costs[i].messageId;
+    if (mid) lastIdx.set(mid, i);
+  }
+  return costs.filter((t, i) => !t.messageId || lastIdx.get(t.messageId) === i);
+}
+
 function rateLimitFields(fiveHourPct?: number | null, sevenDayPct?: number | null) {
   return {
     ...(fiveHourPct != null ? { u5m: fiveHourPct } : {}),
@@ -31,83 +41,16 @@ function rateLimitFields(fiveHourPct?: number | null, sevenDayPct?: number | nul
   };
 }
 
-function readWrittenDetailCount(detailPath: string): Map<number, number> {
-  const writtenSystemCounts = new Map<number, number>();
-  try {
-    const content = fs.readFileSync(detailPath, 'utf8');
-    for (const line of content.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line) as Record<string, unknown>;
-        if (typeof entry['ut'] === 'number' && typeof entry['ct'] === 'number') {
-          const prev = writtenSystemCounts.get(entry['ut']) ?? 0;
-          writtenSystemCounts.set(entry['ut'], Math.max(prev, entry['ct']));
-        }
-      } catch {
-        // skip malformed lines
-      }
-    }
-  } catch {
-    // file doesn't exist yet
-  }
-  return writtenSystemCounts;
-}
-
-interface SessionState {
-  last_transcript_path: string;
-  last_total_cost_usd: number;
-}
-
-function getSessionStatePath(homeDir: string): string {
-  return path.join(getHudPluginDir(homeDir), 'session_state.json');
-}
 
 /**
- * Determines the correct baseline cost for the current session and updates the session state.
+ * 첫 statusline 호출 시의 total_cost_usd를 baseline으로 기록.
+ * 세션당 한 번만 실행 (ut:0 이미 있으면 no-op).
  *
- * - New session (transcript_path changed or no prior state): baseline = last known cost before this session started.
- * - Same session: baseline is already written; returns currentCostUsd (ignored by writeBaseline's hasBaseline guard).
- *
- * Session state is updated on every invocation so that last_total_cost_usd always reflects
- * the most recent cost seen before a potential /clear.
+ * 새 프로세스: total_cost_usd ≈ 0 (첫 API call 비용만큼 미세 오차)
+ * /clear (같은 프로세스): total_cost_usd = 누적값 → 정확한 baseline
  */
-export function resolveBaseline(
-  transcriptPath: string,
-  currentCostUsd: number | null,
-  homeDir: string,
-): number {
-  const statePath = getSessionStatePath(homeDir);
-  let baseline = 0;
-
-  try {
-    const state = JSON.parse(fs.readFileSync(statePath, 'utf8')) as SessionState;
-    if (state.last_transcript_path !== transcriptPath) {
-      // /clear or new session: last known cost before this session is the correct baseline
-      baseline = state.last_total_cost_usd ?? 0;
-    } else {
-      // Same session: writeBaseline will be a no-op (hasBaseline guard), value doesn't matter
-      baseline = currentCostUsd ?? 0;
-    }
-  } catch {
-    // No state file yet: first ever session, baseline = 0
-    baseline = 0;
-  }
-
-  try {
-    const newState: SessionState = {
-      last_transcript_path: transcriptPath,
-      last_total_cost_usd: currentCostUsd ?? 0,
-    };
-    fs.writeFileSync(statePath, JSON.stringify(newState), 'utf8');
-  } catch { /* non-fatal */ }
-
-  return baseline;
-}
-
-export function writeBaseline(transcriptPath: string, cumNativeCost: number | null): void {
+export function writeBaseline(transcriptPath: string, cumNativeCost: number | null, cumApiMs: number | null): void {
   const detailPath = getCostHistoryDetailPath(transcriptPath);
-  // Check if ut:0 baseline entry already exists (file existence is not enough —
-  // writeCostHistory may have created the file before writeBaseline had a chance to run)
   try {
     if (fs.existsSync(detailPath)) {
       const content = fs.readFileSync(detailPath, 'utf8');
@@ -117,7 +60,7 @@ export function writeBaseline(transcriptPath: string, cumNativeCost: number | nu
       });
       if (hasBaseline) return;
     }
-    fs.writeFileSync(detailPath, JSON.stringify({ ut: 0, ct: 0, ccst: 0, cum_ncst: cumNativeCost, o: 0, i: 0, cc: 0, cr: 0 }) + '\n', 'utf8');
+    fs.writeFileSync(detailPath, JSON.stringify({ ut: 0, ct: 0, ccst: 0, cum_ncst: cumNativeCost, cum_api_ms: cumApiMs, o: 0, i: 0, cc: 0, cr: 0 }) + '\n', 'utf8');
   } catch {
     // non-fatal
   }
@@ -131,6 +74,9 @@ export function writeCostHistory(
   timestamp?: number,
   fiveHourPct?: number | null,
   sevenDayPct?: number | null,
+  account?: string | null,
+  accountType?: string | null,
+  cumApiMs?: number | null,
 ): void {
   if (!transcriptPath || turnCosts.length === 0) return;
 
@@ -145,26 +91,34 @@ export function writeCostHistory(
   const sortedEntries = Array.from(byUserTurn.entries()).sort(([a], [b]) => a - b);
   const ts = timestamp != null ? new Date(timestamp).toISOString() : undefined;
   const cumNcst = cumNativeCost != null ? { cum_ncst: roundCost(cumNativeCost) } : {};
+  const cumApiMsField = cumApiMs != null ? { cum_api_ms: Math.round(cumApiMs) } : {};
   const rateLimits = rateLimitFields(fiveHourPct, sevenDayPct);
+  const accountFields = {
+    ...(account != null ? { acct: account } : {}),
+    ...(accountType != null ? { acct_t: accountType } : {}),
+  };
 
   // cost_history: per user turn aggregate, rewrite each time
   try {
     const turnLines = sortedEntries.map(([userTurn, costs]) => {
-      const i = costs.reduce((s, t) => s + t.inputTokens, 0);
-      const cc = costs.reduce((s, t) => s + t.cacheCreationTokens, 0);
-      const cr = costs.reduce((s, t) => s + t.cacheReadTokens, 0);
+      const deduped = dedupTurnCosts(costs);
+      const i = deduped.reduce((s, t) => s + t.inputTokens, 0);
+      const cc = deduped.reduce((s, t) => s + t.cacheCreationTokens, 0);
+      const cr = deduped.reduce((s, t) => s + t.cacheReadTokens, 0);
       return JSON.stringify({
         ...(ts != null ? { ts } : {}),
         ut: userTurn,
-        ct: costs.length,
-        ccst: roundCost(costs.reduce((s, t) => s + t.cost, 0)),
+        ct: deduped.length,
+        ccst: roundCost(deduped.reduce((s, t) => s + t.cost, 0)),
         ...cumNcst,
+        ...cumApiMsField,
         ei: roundEi(calcEffectiveInput(i, cc, cr)),
-        o: costs.reduce((s, t) => s + t.outputTokens, 0),
+        o: deduped.reduce((s, t) => s + t.outputTokens, 0),
         i,
         cc,
         cr,
         ...rateLimits,
+        ...accountFields,
       });
     });
     fs.writeFileSync(getCostHistoryPath(transcriptPath), turnLines.join('\n') + '\n', 'utf8');
@@ -173,28 +127,66 @@ export function writeCostHistory(
   }
 
   // cost_history_detail: per system turn, append-only
+  // rct(raw count): 무조건 증가, dedup 키로 사용
+  // ct: mid가 새로울 때만 증가 (unique API call 수)
   try {
     const detailPath = getCostHistoryDetailPath(transcriptPath);
-    const writtenSystemCounts = readWrittenDetailCount(detailPath);
+
+    // 이미 기록된 max(rct), max(ct), seenMids per ut
+    const writtenRct = new Map<number, number>();
+    const writtenCt = new Map<number, number>();
+    const writtenMids = new Map<number, Set<string>>();
+    try {
+      for (const line of fs.readFileSync(detailPath, 'utf8').split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const e = JSON.parse(line) as Record<string, unknown>;
+          const ut = e['ut'];
+          if (typeof ut !== 'number' || ut === 0) continue;
+          const rct = e['rct'], ct = e['ct'], mid = e['mid'];
+          if (typeof rct === 'number') writtenRct.set(ut, Math.max(writtenRct.get(ut) ?? 0, rct));
+          if (typeof ct === 'number') writtenCt.set(ut, Math.max(writtenCt.get(ut) ?? 0, ct));
+          if (typeof mid === 'string') {
+            if (!writtenMids.has(ut)) writtenMids.set(ut, new Set());
+            writtenMids.get(ut)!.add(mid);
+          }
+        } catch { /* skip malformed */ }
+      }
+    } catch { /* file doesn't exist yet */ }
+
     const newLines: string[] = [];
 
     for (const [userTurn, costs] of sortedEntries) {
-      const writtenCount = writtenSystemCounts.get(userTurn) ?? 0;
-      for (let j = writtenCount; j < costs.length; j++) {
-        const t = costs[j];
+      const maxWrittenRct = writtenRct.get(userTurn) ?? 0;
+      const seenMids = writtenMids.get(userTurn) ?? new Set<string>();
+      let rctCounter = 0;
+      let ctCounter = writtenCt.get(userTurn) ?? 0;
+      for (const t of costs) {
+        rctCounter += 1;
+        const mid = t.messageId;
+        const isNewMid = !mid || !seenMids.has(mid);
+        if (isNewMid) {
+          ctCounter += 1;
+          if (mid) seenMids.add(mid);
+        }
+        if (rctCounter <= maxWrittenRct) continue; // 이미 기록됨 → skip
         newLines.push(JSON.stringify({
           ...(ts != null ? { ts } : {}),
           ut: userTurn,
-          ct: j + 1,
+          ct: ctCounter,
+          rct: rctCounter,
+          ...(mid != null ? { mid } : {}),
           m: t.model ?? 'unknown',
           ccst: roundCost(t.cost),
           ...cumNcst,
+          ...cumApiMsField,
           ei: roundEi(calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens)),
           o: t.outputTokens,
           i: t.inputTokens,
           cc: t.cacheCreationTokens,
           cr: t.cacheReadTokens,
           ...rateLimits,
+          ...accountFields,
           ...(t.userMessage != null ? { req: `UserReq-${t.userMessage.slice(0, 50)}` } : {}),
           ...(t.tools != null ? { tools: t.tools } : {}),
         }));

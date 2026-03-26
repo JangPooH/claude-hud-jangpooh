@@ -90,6 +90,7 @@ export function isLimitReached(data: UsageData): boolean {
 
 export interface TurnCost {
   model?: string;
+  messageId?: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;

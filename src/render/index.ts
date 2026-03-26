@@ -3,6 +3,7 @@ import { DEFAULT_ELEMENT_ORDER } from '../config.js';
 import type { RenderContext } from '../types.js';
 import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
+import { renderTurnCounterLine } from './turn-counter-line.js';
 import { renderAgentsLine } from './agents-line.js';
 import { renderTodosLine } from './todos-line.js';
 import {
@@ -307,7 +308,7 @@ function makeSeparator(length: number): string {
   return dim('─'.repeat(Math.max(length, 1)));
 }
 
-const ACTIVITY_ELEMENTS = new Set<HudElement>(['tools', 'agents', 'todos']);
+const ACTIVITY_ELEMENTS = new Set<HudElement>(['turnCounter', 'tools', 'agents', 'todos']);
 
 function collectActivityLines(ctx: RenderContext): string[] {
   const activityLines: string[] = [];
@@ -353,6 +354,8 @@ function renderElementLine(ctx: RenderContext, element: HudElement): string | nu
       return renderCostLine(ctx);
     case 'environment':
       return renderEnvironmentLine(ctx);
+    case 'turnCounter':
+      return renderTurnCounterLine(ctx);
     case 'tools':
       return display?.showTools === false ? null : renderToolsLine(ctx);
     case 'agents':
@@ -401,6 +404,27 @@ function renderExpanded(ctx: RenderContext): Array<{ line: string; isActivity: b
         lines.push({ line: firstLine, isActivity: false });
       } else if (secondLine) {
         lines.push({ line: secondLine, isActivity: false });
+      }
+
+      continue;
+    }
+
+    if (
+      (element === 'turnCounter' && nextElement === 'tools' && !seen.has('tools'))
+      || (element === 'tools' && nextElement === 'turnCounter' && !seen.has('turnCounter'))
+    ) {
+      seen.add(element);
+      seen.add(nextElement);
+
+      const firstLine = renderElementLine(ctx, element);
+      const secondLine = renderElementLine(ctx, nextElement);
+
+      if (firstLine && secondLine) {
+        lines.push({ line: `${firstLine} | ${secondLine}`, isActivity: true });
+      } else if (firstLine) {
+        lines.push({ line: firstLine, isActivity: true });
+      } else if (secondLine) {
+        lines.push({ line: secondLine, isActivity: true });
       }
 
       continue;
