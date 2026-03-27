@@ -1,6 +1,7 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code when working with this repository.
+> This is a personal fork of claude-hud, customized by jangpooh.
 
 ## Project Overview
 
@@ -25,37 +26,23 @@ Claude Code → stdin JSON → parse → render lines → stdout → Claude Code
            ↘ transcript_path → parse JSONL → tools/agents/todos
 ```
 
-**Key insight**: The statusline is invoked every ~300ms by Claude Code. Each invocation:
+**Key insight**: The statusline is invoked by Claude Code **only while Claude is actively processing a request** (not while the user is idle at the prompt). Each invocation:
 1. Receives JSON via stdin (model, context, tokens - native accurate data)
 2. Parses the transcript JSONL file for tools, agents, and todos
 3. Renders multi-line output to stdout
 4. Claude Code displays all lines
 
+**Update timing**:
+- While Claude is active: invoked ~every 300ms with fresh stdin data → all values up to date
+- While user is idle (typing at prompt): not invoked → display frozen at last render
+- Direct invocation (`node dist/index.js`): `stdin.isTTY` is true → `readStdin()` returns null → only prints "Initializing...", no HUD rendered
+- Piped invocation with manual JSON: file-based data (git, transcript, config) is read fresh, but stdin-derived data (context %, usage %, model) reflects only what was manually piped
+
 ### Data Sources
 
-**Native from stdin JSON** (accurate, no estimation):
-- `model.display_name` - Current model
-- `context_window.current_usage` - Token counts
-- `context_window.context_window_size` - Max context
-- `transcript_path` - Path to session transcript
-
-**From transcript JSONL parsing**:
-- `tool_use` blocks → tool name, input, start time
-- `tool_result` blocks → completion, duration
-- Running tools = `tool_use` without matching `tool_result`
-- `TodoWrite` calls → todo list
-- `Task` calls → agent info
-
-**From config files**:
-- MCP count from `~/.claude/settings.json` (mcpServers)
-- Hooks count from `~/.claude/settings.json` (hooks)
-- Rules count from CLAUDE.md files
-
-**From Claude Code stdin rate limits**:
-- `rate_limits.five_hour.used_percentage` - 5-hour subscriber usage percentage
-- `rate_limits.five_hour.resets_at` - 5-hour reset timestamp
-- `rate_limits.seven_day.used_percentage` - 7-day subscriber usage percentage
-- `rate_limits.seven_day.resets_at` - 7-day reset timestamp
+- **stdin JSON**: model, cost, context window, rate limits → `src/stdin.ts` 참고
+- **transcript JSONL**: tool_use/tool_result blocks, TodoWrite, Task → `src/transcript.ts` 참고
+- **config files**: MCP count, hooks count (`~/.claude/settings.json`), rules count (CLAUDE.md files)
 
 ### File Structure
 
@@ -83,36 +70,17 @@ src/
         └── environment.ts # Config counts (opt-in)
 ```
 
-### Output Format (default expanded layout)
+### Output Format & Context Thresholds
 
-```
-[Opus] │ my-project git:(main*)
-Context █████░░░░░ 45% │ Usage ██░░░░░░░░ 25% (1h 30m / 5h)
-```
-
-Lines 1-2 always shown. Additional lines are opt-in via config:
-- Tools line (`showTools`): ◐ Edit: auth.ts | ✓ Read ×3
-- Agents line (`showAgents`): ◐ explore [haiku]: Finding auth code
-- Todos line (`showTodos`): ▸ Fix authentication bug (2/5)
-- Environment line (`showConfigCounts`): 2 CLAUDE.md | 4 rules
-
-### Context Thresholds
-
-| Threshold | Color | Action |
-|-----------|-------|--------|
-| <70% | Green | Normal |
-| 70-85% | Yellow | Warning |
-| >85% | Red | Show token breakdown |
+→ `src/render/**/*.ts` 참고 (출력 포맷, 컬러 임계값 상세)
 
 ## Plugin Configuration
 
-The plugin manifest is in `.claude-plugin/plugin.json` (metadata only - name, description, version, author).
+The plugin manifest is in `.claude-plugin/plugin.json` (metadata only).
 
-**StatusLine configuration** must be added to the user's `~/.claude/settings.json` via `/claude-hud:setup`.
+**StatusLine configuration** must be added to `~/.claude/settings.json` via `/claude-hud:setup`.
 
-The setup command adds an auto-updating command that finds the latest installed version at runtime.
-
-Note: `statusLine` is NOT a valid plugin.json field. It must be configured in settings.json after plugin installation. Updates are automatic - no need to re-run setup.
+Note: `statusLine` is NOT a valid plugin.json field. → `.claude-plugin/` 참고
 
 ## Dependencies
 

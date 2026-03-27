@@ -16,5 +16,5 @@ export function renderTurnCounterLine(ctx: RenderContext): string | null {
   const curClaudeTurns = turnCosts.filter((t, i) => (t.userTurn ?? i + 1) === currentUserTurn).length;
   const totalClaudeTurns = turnCosts.length;
 
-  return `Turn#. ${normalizedTurn}-${curClaudeTurns} ${dim(`(tot ${totalClaudeTurns})`)}`;
+  return `Turn ${normalizedTurn}-${curClaudeTurns} ${dim(`(tot ${totalClaudeTurns})`)}`;
 }
