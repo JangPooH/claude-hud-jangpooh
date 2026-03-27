@@ -9,6 +9,7 @@ const GREEN = '\x1b[32m';
 const YELLOW = '\x1b[33m';
 const MAGENTA = '\x1b[35m';
 const CYAN = '\x1b[36m';
+const BLUE = '\x1b[34m';
 const BRIGHT_BLUE = '\x1b[94m';
 const BRIGHT_MAGENTA = '\x1b[95m';
 const CLAUDE_ORANGE = '\x1b[38;5;208m';
@@ -129,24 +130,38 @@ export function getContextColor(percent: number, colors?: Partial<HudColorOverri
 
 export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string {
   if (percent >= 90) return resolveAnsi(colors?.critical, RED);
-  if (percent >= 75) return resolveAnsi(colors?.usageWarning, BRIGHT_MAGENTA);
-  return resolveAnsi(colors?.usage, BRIGHT_BLUE);
+  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[38;5;208m');
+  return resolveAnsi(colors?.usage, BLUE);
+}
+
+const PARTIAL_CHARS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
+
+function buildBar(percent: number, width: number): string {
+  const exact = (percent / 100) * width;
+  const full = Math.floor(exact);
+  const partialIdx = Math.round((exact - full) * 8);
+
+  if (partialIdx === 0) {
+    return '█'.repeat(full) + DIM + '░'.repeat(width - full);
+  }
+  if (partialIdx === 8) {
+    return '█'.repeat(full + 1) + DIM + '░'.repeat(width - full - 1);
+  }
+  return '█'.repeat(full) + PARTIAL_CHARS[partialIdx] + DIM + '░'.repeat(width - full - 1);
 }
 
 export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const filled = Math.round((safePercent / 100) * safeWidth);
-  const empty = safeWidth - filled;
   const color = getQuotaColor(safePercent, colors);
-  return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+  return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }
 
 function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>): string {
   // Use a visually adjacent/contrasting color derived from the quota color at this usage level
   if (percent >= 90) return resolveAnsi(colors?.critical, '\x1b[91m');  // bright red (quota: red)
-  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[93m'); // bright yellow (quota: bright magenta)
-  return resolveAnsi(colors?.usage, CYAN);                                  // cyan (quota: bright blue)
+  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[38;5;214m'); // bright orange (quota: orange)
+  return resolveAnsi(colors?.usage, CYAN);                                   // cyan (quota: blue)
 }
 
 export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
@@ -154,7 +169,7 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
   const safeTime = Number.isFinite(timePercent) ? Math.min(100, Math.max(0, timePercent)) : 0;
 
-  const usageBlocks = Math.round((safePercent / 100) * safeWidth);
+  const usageBlocks = Math.floor((safePercent / 100) * safeWidth);
   // timePos < 0 means no marker (window already expired)
   const timePos = safeTime < 100 ? Math.min(safeWidth - 1, Math.floor((safeTime / 100) * safeWidth)) : -1;
   const color = getQuotaColor(safePercent, colors);
@@ -163,8 +178,11 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
   let result = '';
   for (let i = 0; i < safeWidth; i++) {
     if (i === timePos) {
-      const char = i < usageBlocks ? '█' : '░';
-      result += `${markerColor}${char}${RESET}`;
+      if (i < usageBlocks) {
+        result += `${markerColor}█${RESET}`;
+      } else {
+        result += `${markerColor}░${RESET}`;
+      }
     } else if (i < usageBlocks) {
       result += `${color}█${RESET}`;
     } else {
@@ -177,8 +195,6 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
 export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const filled = Math.round((safePercent / 100) * safeWidth);
-  const empty = safeWidth - filled;
   const color = getContextColor(safePercent, colors);
-  return `${color}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+  return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }

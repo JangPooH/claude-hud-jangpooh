@@ -58,18 +58,19 @@ export function formatUsageWindowPart({
 }): string {
   const usageDisplay = formatUsagePercent(percent, colors);
   const reset = formatResetTime(resetAt);
+  const dimColor = reset ? `\x1b[2m${getQuotaColor(percent ?? 0, colors)}` : '';
 
   if (usageBarEnabled) {
     const bar = timePercent !== null
       ? quotaBarWithTime(percent ?? 0, timePercent, barWidth, colors)
       : quotaBar(percent ?? 0, barWidth, colors);
     const body = reset
-      ? `${bar} ${usageDisplay} (resets in ${reset})`
+      ? `${bar} ${usageDisplay} ${dimColor}(~${reset})${RESET}`
       : `${bar} ${usageDisplay}`;
     return forceLabel ? `${windowLabel}: ${body}` : body;
   }
 
   return reset
-    ? `${windowLabel}: ${usageDisplay} (resets in ${reset})`
+    ? `${windowLabel}: ${usageDisplay} ${dimColor}(${reset})${RESET}`
     : `${windowLabel}: ${usageDisplay}`;
 }

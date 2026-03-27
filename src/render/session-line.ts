@@ -26,6 +26,7 @@ export function renderSessionLine(ctx: RenderContext): string {
 
   const colors = ctx.config?.colors;
   const barWidth = getAdaptiveBarWidth();
+  const usageBarWidth = getAdaptiveBarWidth(20);
   const bar = coloredBar(percent, barWidth, colors);
 
   const parts: string[] = [];
@@ -164,7 +165,7 @@ export function renderSessionLine(ctx: RenderContext): string {
             resetAt: ctx.usageData.sevenDayResetAt,
             colors,
             usageBarEnabled,
-            barWidth,
+            barWidth: usageBarWidth,
             forceLabel: true,
           });
           parts.push(weeklyOnlyPart);
@@ -175,7 +176,7 @@ export function renderSessionLine(ctx: RenderContext): string {
             resetAt: ctx.usageData.fiveHourResetAt,
             colors,
             usageBarEnabled,
-            barWidth,
+            barWidth: usageBarWidth,
           });
 
           const sevenDayThreshold = display?.sevenDayThreshold ?? 80;
@@ -186,7 +187,7 @@ export function renderSessionLine(ctx: RenderContext): string {
               resetAt: ctx.usageData.sevenDayResetAt,
               colors,
               usageBarEnabled,
-              barWidth,
+              barWidth: usageBarWidth,
             });
             parts.push(`${fiveHourPart} | ${sevenDayPart}`);
           } else {
