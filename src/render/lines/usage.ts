@@ -13,15 +13,15 @@ export function renderUsageLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  if (!ctx.usageData) {
-    return null;
-  }
-
   if (getProviderLabel(ctx.stdin)) {
     return null;
   }
 
   const accountPrefix = formatAccountPrefix(ctx);
+
+  if (!ctx.usageData) {
+    return accountPrefix.trim() || null;
+  }
   const usageLabel = label('Usage', colors);
 
   if (isLimitReached(ctx.usageData)) {

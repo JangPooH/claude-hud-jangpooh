@@ -11,12 +11,18 @@ export interface ClaudeMdFile {
   tokens: number;
 }
 
+export interface PluginInfo {
+  name: string;
+  scopes: ('global' | 'local')[];
+}
+
 export interface ConfigCounts {
   claudeMdCount: number;
   claudeMdFiles: ClaudeMdFile[];
   rulesCount: number;
   mcpCount: number;
   hooksCount: number;
+  plugins: PluginInfo[];
 }
 
 // Valid keys for disabled MCP arrays in config files
@@ -263,5 +269,73 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   // A server with the same name in both user and project scope counts as 2 (separate configs).
   const mcpCount = userMcpServers.size + projectMcpServers.size;
 
-  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount, mcpCount, hooksCount };
+  const plugins = getInstalledPlugins(cwd);
+
+  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount, mcpCount, hooksCount, plugins };
+}
+
+function getEnabledPluginKeys(settingsPath: string): Set<string> {
+  if (!fs.existsSync(settingsPath)) return new Set();
+  try {
+    const content = fs.readFileSync(settingsPath, 'utf8');
+    const config = JSON.parse(content);
+    if (!config.enabledPlugins || typeof config.enabledPlugins !== 'object') return new Set();
+    return new Set(
+      Object.entries(config.enabledPlugins)
+        .filter(([, v]) => v === true)
+        .map(([k]) => k)
+    );
+  } catch (error) {
+    debug('Failed to read enabledPlugins:', error);
+    return new Set();
+  }
+}
+
+function getInstalledPlugins(cwd?: string): PluginInfo[] {
+  const homeDir = os.homedir();
+  const claudeDir = getClaudeConfigDir(homeDir);
+  const installedPluginsPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
+
+  if (!fs.existsSync(installedPluginsPath)) return [];
+
+  // Collect enabled plugin keys from user settings (and optionally project settings)
+  const enabledKeys = getEnabledPluginKeys(path.join(claudeDir, 'settings.json'));
+  if (cwd) {
+    for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.json'))) {
+      enabledKeys.add(key);
+    }
+    for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.local.json'))) {
+      enabledKeys.add(key);
+    }
+  }
+
+  try {
+    const content = fs.readFileSync(installedPluginsPath, 'utf8');
+    const data = JSON.parse(content);
+    if (!data.plugins || typeof data.plugins !== 'object') return [];
+
+    const result: PluginInfo[] = [];
+    for (const [key, entries] of Object.entries(data.plugins)) {
+      if (!enabledKeys.has(key)) continue;
+
+      const name = key.split('@')[0];
+      const scopes = new Set<'global' | 'local'>();
+
+      for (const entry of entries as Array<{ scope: string; projectPath?: string }>) {
+        if (entry.scope === 'user') {
+          scopes.add('global');
+        } else if (entry.scope === 'local' && cwd && entry.projectPath === cwd) {
+          scopes.add('local');
+        }
+      }
+
+      if (scopes.size > 0) {
+        result.push({ name, scopes: [...scopes] });
+      }
+    }
+    return result;
+  } catch (error) {
+    debug('Failed to read installed plugins:', error);
+    return [];
+  }
 }

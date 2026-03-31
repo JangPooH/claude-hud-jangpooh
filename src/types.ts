@@ -1,7 +1,7 @@
 import type { HudConfig } from './config.js';
 import type { GitStatus } from './git.js';
 import type { NonstopInfo } from './nonstop.js';
-import type { ClaudeMdFile } from './config-reader.js';
+import type { ClaudeMdFile, PluginInfo } from './config-reader.js';
 
 export interface StdinData {
   session_id?: string;
@@ -121,6 +121,7 @@ export interface RenderContext {
   rulesCount: number;
   mcpCount: number;
   hooksCount: number;
+  plugins: PluginInfo[];
   sessionDuration: string;
   gitStatus: GitStatus | null;
   usageData: UsageData | null;

@@ -300,7 +300,7 @@ function processEntry(
       parseState.pendingUserMessage = undefined;
       result.sessionCost += cost;
     }
-    if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model)) {
+    if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model) && entry.message.model !== '<synthetic>') {
       result.unknownPricingModels.push(entry.message.model);
     }
   }
