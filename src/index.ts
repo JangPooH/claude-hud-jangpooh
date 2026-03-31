@@ -2,6 +2,7 @@ import { readStdin, getUsageFromStdin } from './stdin.js';
 import { parseTranscript } from './transcript.js';
 import { render } from './render/index.js';
 import { countConfigs } from './config-reader.js';
+import type { RulesFileInfo } from './config-reader.js';
 import { getGitStatus } from './git.js';
 import { loadConfig } from './config.js';
 import { parseExtraCmdArg, runExtraCmd } from './extra-cmd.js';
@@ -9,12 +10,63 @@ import { getClaudeCodeVersion } from './version.js';
 import { getMemoryUsage } from './memory.js';
 import { getNonstopInfo } from './nonstop.js';
 import { writeCostHistory, writeBaseline } from './cost-history.js';
-import type { RenderContext } from './types.js';
+import type { RenderContext, ToolEntry } from './types.js';
 import { fileURLToPath } from 'node:url';
 import { realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, isAbsolute } from 'node:path';
+import * as nodePath from 'node:path';
 import { homedir } from 'node:os';
 import { getHudPluginDir } from './claude-config-dir.js';
+
+function globToRegex(pattern: string): RegExp {
+  let result = '^';
+  let i = 0;
+  while (i < pattern.length) {
+    const c = pattern[i];
+    if (c === '*' && pattern[i + 1] === '*') {
+      result += '[\\s\\S]*';
+      i += 2;
+      if (pattern[i] === '/') i++;
+    } else if (c === '*') {
+      result += '[^/]*';
+      i++;
+    } else if ('\\.+^${}()|[]'.includes(c)) {
+      result += '\\' + c;
+      i++;
+    } else {
+      result += c;
+      i++;
+    }
+  }
+  return new RegExp(result + '$');
+}
+
+function matchesPattern(filePath: string, pattern: string, cwd: string, home: string): boolean {
+  const expanded = pattern.startsWith('~/') ? nodePath.join(home, pattern.slice(2)) : pattern;
+  const resolvedPattern = isAbsolute(expanded) ? expanded : nodePath.join(cwd, expanded);
+  const resolvedFile = isAbsolute(filePath) ? filePath : nodePath.join(cwd, filePath);
+  try {
+    return globToRegex(resolvedPattern).test(resolvedFile);
+  } catch {
+    return false;
+  }
+}
+
+function computeMatchedRulesFiles(tools: ToolEntry[], rulesFiles: RulesFileInfo[], cwd: string, home: string): { name: string; scope: 'global' | 'local' }[] {
+  if (!cwd || !rulesFiles.length) return [];
+  const filePaths = tools
+    .filter(t => (t.name === 'Read' || t.name === 'Write' || t.name === 'Edit') && t.target)
+    .map(t => t.target!);
+  if (!filePaths.length) return [];
+  const matched: { name: string; scope: 'global' | 'local' }[] = [];
+  for (const rf of rulesFiles) {
+    if (!rf.paths.length) continue;
+    if (filePaths.some(fp => rf.paths.some(p => matchesPattern(fp, p, cwd, home)))) {
+      matched.push({ name: rf.name, scope: rf.scope });
+    }
+  }
+  return matched;
+}
 
 export type MainDeps = {
   readStdin: typeof readStdin;
@@ -74,7 +126,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await deps.parseTranscript(transcriptPath);
 
-    const { claudeMdCount, claudeMdFiles, rulesCount, mcpCount, hooksCount, plugins } = await deps.countConfigs(stdin.cwd);
+    const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins } = await deps.countConfigs(stdin.cwd);
 
     const config = await deps.loadConfig();
     const gitStatus = config.gitStatus.enabled
@@ -118,12 +170,23 @@ const transcriptPath = stdin.transcript_path ?? '';
       );
     }
 
+    const matchedRulesFiles = computeMatchedRulesFiles(
+      transcript.tools,
+      rulesFiles,
+      stdin.cwd ?? '',
+      homedir(),
+    );
+
     const ctx: RenderContext = {
       stdin,
       transcript,
       claudeMdCount,
       claudeMdFiles,
       rulesCount,
+      globalRulesCount,
+      localRulesCount,
+      rulesFiles,
+      matchedRulesFiles,
       mcpCount,
       hooksCount,
       plugins,

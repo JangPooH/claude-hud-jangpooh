@@ -1,5 +1,5 @@
 import type { RenderContext } from '../../types.js';
-import { label, dim } from '../colors.js';
+import { label, dim, claudeOrange, yellow, dimClaudeOrange, dimYellow } from '../colors.js';
 
 export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -28,7 +28,22 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   }
 
   if (ctx.rulesCount > 0) {
-    parts.push(`${ctx.rulesCount} rules`);
+    let rulesLabel: string;
+    if (ctx.globalRulesCount > 0 && ctx.localRulesCount > 0) {
+      rulesLabel = `${claudeOrange(String(ctx.globalRulesCount))}+${yellow(String(ctx.localRulesCount))} rules`;
+    } else if (ctx.globalRulesCount > 0) {
+      rulesLabel = `${claudeOrange(String(ctx.rulesCount))} rules`;
+    } else {
+      rulesLabel = `${yellow(String(ctx.rulesCount))} rules`;
+    }
+    let rulesPart = rulesLabel;
+    if (ctx.matchedRulesFiles.length > 0) {
+      const fileLabels = ctx.matchedRulesFiles.map(f =>
+        f.scope === 'global' ? dimClaudeOrange(f.name) : dimYellow(f.name)
+      );
+      rulesPart += ` ${fileLabels.join(' ')}`;
+    }
+    parts.push(rulesPart);
   }
 
   if (ctx.mcpCount > 0) {
