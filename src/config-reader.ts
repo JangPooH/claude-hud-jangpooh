@@ -16,10 +16,19 @@ export interface PluginInfo {
   scopes: ('global' | 'local')[];
 }
 
+export interface RulesFileInfo {
+  name: string;   // basename (e.g. "stdin-fields.md")
+  paths: string[]; // patterns from frontmatter `paths:` field
+  scope: 'global' | 'local';
+}
+
 export interface ConfigCounts {
   claudeMdCount: number;
   claudeMdFiles: ClaudeMdFile[];
   rulesCount: number;
+  globalRulesCount: number;
+  localRulesCount: number;
+  rulesFiles: RulesFileInfo[];
   mcpCount: number;
   hooksCount: number;
   plugins: PluginInfo[];
@@ -85,23 +94,42 @@ function countHooksInFile(filePath: string): number {
   return 0;
 }
 
-function countRulesInDir(rulesDir: string): number {
-  if (!fs.existsSync(rulesDir)) return 0;
-  let count = 0;
+function parsePathsFromFrontmatter(content: string): string[] {
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  const yaml = match[1];
+  const pathsBlock = yaml.match(/^paths:\s*\n((?:[ \t]+-[ \t]+.+\n?)*)/m);
+  if (!pathsBlock) return [];
+  const result: string[] = [];
+  for (const line of pathsBlock[1].split('\n')) {
+    const m = line.match(/^[ \t]+-[ \t]+"?([^"]+?)"?\s*$/);
+    if (m) result.push(m[1]);
+  }
+  return result;
+}
+
+function collectRulesFilesInDir(rulesDir: string, scope: 'global' | 'local'): RulesFileInfo[] {
+  if (!fs.existsSync(rulesDir)) return [];
+  const result: RulesFileInfo[] = [];
   try {
     const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(rulesDir, entry.name);
       if (entry.isDirectory()) {
-        count += countRulesInDir(fullPath);
+        result.push(...collectRulesFilesInDir(fullPath, scope));
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        count++;
+        let paths: string[] = [];
+        try {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          paths = parsePathsFromFrontmatter(content);
+        } catch { /* non-fatal */ }
+        result.push({ name: entry.name, paths, scope });
       }
     }
   } catch (error) {
     debug(`Failed to read rules from ${rulesDir}:`, error);
   }
-  return count;
+  return result;
 }
 
 function normalizePathForComparison(inputPath: string): string {
@@ -153,7 +181,8 @@ function addClaudeMd(files: ClaudeMdFile[], filePath: string, homeDir: string, c
 
 export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   const claudeMdFiles: ClaudeMdFile[] = [];
-  let rulesCount = 0;
+  const globalRulesFiles: RulesFileInfo[] = [];
+  const localRulesFiles: RulesFileInfo[] = [];
   let hooksCount = 0;
 
   const homeDir = os.homedir();
@@ -172,7 +201,7 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   }
 
   // ~/.claude/rules/*.md
-  rulesCount += countRulesInDir(path.join(claudeDir, 'rules'));
+  globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global'));
 
   // ~/.claude/settings.json (MCPs and hooks)
   const userSettings = path.join(claudeDir, 'settings.json');
@@ -229,7 +258,7 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     // {cwd}/.claude/rules/*.md (recursive)
     // Skip when it overlaps with user-scope rules.
     if (!projectClaudeOverlapsUserScope) {
-      rulesCount += countRulesInDir(path.join(cwd, '.claude', 'rules'));
+      localRulesFiles.push(...collectRulesFilesInDir(path.join(cwd, '.claude', 'rules'), 'local'));
     }
 
     // {cwd}/.mcp.json (project MCP config) - tracked separately for disabled filtering
@@ -270,8 +299,9 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   const mcpCount = userMcpServers.size + projectMcpServers.size;
 
   const plugins = getInstalledPlugins(cwd);
+  const allRulesFiles = [...globalRulesFiles, ...localRulesFiles];
 
-  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount, mcpCount, hooksCount, plugins };
+  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins };
 }
 
 function getEnabledPluginKeys(settingsPath: string): Set<string> {

@@ -86,6 +86,22 @@ export function brightBlue(text: string): string {
   return colorize(text, BRIGHT_BLUE);
 }
 
+export function dimCyan(text: string): string {
+  return `${DIM}${CYAN}${text}${RESET}`;
+}
+
+export function dimBrightBlue(text: string): string {
+  return `${DIM}${BRIGHT_BLUE}${text}${RESET}`;
+}
+
+export function dimClaudeOrange(text: string): string {
+  return `${DIM}${CLAUDE_ORANGE}${text}${RESET}`;
+}
+
+export function dimYellow(text: string): string {
+  return `${DIM}${YELLOW}${text}${RESET}`;
+}
+
 export function claudeOrange(text: string): string {
   return colorize(text, CLAUDE_ORANGE);
 }
