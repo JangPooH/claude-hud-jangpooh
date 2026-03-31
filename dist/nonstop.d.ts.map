@@ -1,0 +1,1 @@
+{"version":3,"file":"nonstop.d.ts","sourceRoot":"","sources":["../src/nonstop.ts"],"names":[],"mappings":"AAIA,MAAM,WAAW,WAAW;IAC1B,cAAc,EAAE,MAAM,GAAG,IAAI,CAAC;IAC9B,kBAAkB,EAAE,MAAM,GAAG,IAAI,CAAC;IAClC,UAAU,EAAE,MAAM,CAAC;CACpB;AAwDD,wBAAsB,cAAc,CAAC,cAAc,CAAC,EAAE,MAAM,GAAG,OAAO,CAAC,WAAW,GAAG,IAAI,CAAC,CAYzF"}

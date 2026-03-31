@@ -1,0 +1,293 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+import { createDebug } from './debug.js';
+import { getClaudeConfigDir, getClaudeConfigJsonPath } from './claude-config-dir.js';
+const debug = createDebug('config');
+function getMcpServerNames(filePath) {
+    if (!fs.existsSync(filePath))
+        return new Set();
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const config = JSON.parse(content);
+        if (config.mcpServers && typeof config.mcpServers === 'object') {
+            return new Set(Object.keys(config.mcpServers));
+        }
+    }
+    catch (error) {
+        debug(`Failed to read MCP servers from ${filePath}:`, error);
+    }
+    return new Set();
+}
+function getDisabledMcpServers(filePath, key) {
+    if (!fs.existsSync(filePath))
+        return new Set();
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const config = JSON.parse(content);
+        if (Array.isArray(config[key])) {
+            const validNames = config[key].filter((s) => typeof s === 'string');
+            if (validNames.length !== config[key].length) {
+                debug(`${key} in ${filePath} contains non-string values, ignoring them`);
+            }
+            return new Set(validNames);
+        }
+    }
+    catch (error) {
+        debug(`Failed to read ${key} from ${filePath}:`, error);
+    }
+    return new Set();
+}
+function countMcpServersInFile(filePath, excludeFrom) {
+    const servers = getMcpServerNames(filePath);
+    if (excludeFrom) {
+        const exclude = getMcpServerNames(excludeFrom);
+        for (const name of exclude) {
+            servers.delete(name);
+        }
+    }
+    return servers.size;
+}
+function countHooksInFile(filePath) {
+    if (!fs.existsSync(filePath))
+        return 0;
+    try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        const config = JSON.parse(content);
+        if (config.hooks && typeof config.hooks === 'object') {
+            return Object.keys(config.hooks).length;
+        }
+    }
+    catch (error) {
+        debug(`Failed to read hooks from ${filePath}:`, error);
+    }
+    return 0;
+}
+function countRulesInDir(rulesDir) {
+    if (!fs.existsSync(rulesDir))
+        return 0;
+    let count = 0;
+    try {
+        const entries = fs.readdirSync(rulesDir, { withFileTypes: true });
+        for (const entry of entries) {
+            const fullPath = path.join(rulesDir, entry.name);
+            if (entry.isDirectory()) {
+                count += countRulesInDir(fullPath);
+            }
+            else if (entry.isFile() && entry.name.endsWith('.md')) {
+                count++;
+            }
+        }
+    }
+    catch (error) {
+        debug(`Failed to read rules from ${rulesDir}:`, error);
+    }
+    return count;
+}
+function normalizePathForComparison(inputPath) {
+    let normalized = path.normalize(path.resolve(inputPath));
+    const root = path.parse(normalized).root;
+    while (normalized.length > root.length && normalized.endsWith(path.sep)) {
+        normalized = normalized.slice(0, -1);
+    }
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+function pathsReferToSameLocation(pathA, pathB) {
+    if (normalizePathForComparison(pathA) === normalizePathForComparison(pathB)) {
+        return true;
+    }
+    if (!fs.existsSync(pathA) || !fs.existsSync(pathB)) {
+        return false;
+    }
+    try {
+        const realPathA = fs.realpathSync.native(pathA);
+        const realPathB = fs.realpathSync.native(pathB);
+        return normalizePathForComparison(realPathA) === normalizePathForComparison(realPathB);
+    }
+    catch {
+        return false;
+    }
+}
+function getFileTokens(filePath) {
+    try {
+        const stat = fs.statSync(filePath);
+        return Math.round(stat.size / 4);
+    }
+    catch {
+        return 0;
+    }
+}
+function addClaudeMd(files, filePath, homeDir, cwd) {
+    const tokens = getFileTokens(filePath);
+    let displayPath = filePath;
+    if (cwd && filePath.startsWith(cwd + path.sep)) {
+        displayPath = '.' + filePath.slice(cwd.length);
+    }
+    else if (filePath.startsWith(homeDir + path.sep)) {
+        displayPath = '~' + filePath.slice(homeDir.length);
+    }
+    files.push({ displayPath, tokens });
+}
+export async function countConfigs(cwd) {
+    const claudeMdFiles = [];
+    let rulesCount = 0;
+    let hooksCount = 0;
+    const homeDir = os.homedir();
+    const claudeDir = getClaudeConfigDir(homeDir);
+    // Collect all MCP servers across scopes, then subtract disabled ones
+    const userMcpServers = new Set();
+    const projectMcpServers = new Set();
+    // === USER SCOPE ===
+    // ~/.claude/CLAUDE.md
+    const userClaudeMd = path.join(claudeDir, 'CLAUDE.md');
+    if (fs.existsSync(userClaudeMd)) {
+        addClaudeMd(claudeMdFiles, userClaudeMd, homeDir, cwd);
+    }
+    // ~/.claude/rules/*.md
+    rulesCount += countRulesInDir(path.join(claudeDir, 'rules'));
+    // ~/.claude/settings.json (MCPs and hooks)
+    const userSettings = path.join(claudeDir, 'settings.json');
+    for (const name of getMcpServerNames(userSettings)) {
+        userMcpServers.add(name);
+    }
+    hooksCount += countHooksInFile(userSettings);
+    // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
+    const userClaudeJson = getClaudeConfigJsonPath(homeDir);
+    for (const name of getMcpServerNames(userClaudeJson)) {
+        userMcpServers.add(name);
+    }
+    // Get disabled user-scope MCPs from ~/.claude.json
+    const disabledUserMcps = getDisabledMcpServers(userClaudeJson, 'disabledMcpServers');
+    for (const name of disabledUserMcps) {
+        userMcpServers.delete(name);
+    }
+    // === PROJECT SCOPE ===
+    // Avoid double-counting when project .claude directory is the same location as user scope.
+    const projectClaudeDir = cwd ? path.join(cwd, '.claude') : null;
+    const projectClaudeOverlapsUserScope = projectClaudeDir
+        ? pathsReferToSameLocation(projectClaudeDir, claudeDir)
+        : false;
+    if (cwd) {
+        // {cwd}/CLAUDE.md
+        const cwdClaudeMd = path.join(cwd, 'CLAUDE.md');
+        if (fs.existsSync(cwdClaudeMd)) {
+            addClaudeMd(claudeMdFiles, cwdClaudeMd, homeDir, cwd);
+        }
+        // {cwd}/CLAUDE.local.md
+        const cwdClaudeLocalMd = path.join(cwd, 'CLAUDE.local.md');
+        if (fs.existsSync(cwdClaudeLocalMd)) {
+            addClaudeMd(claudeMdFiles, cwdClaudeLocalMd, homeDir, cwd);
+        }
+        // {cwd}/.claude/CLAUDE.md (alternative location, skip when it is user scope)
+        const dotClaudeMd = path.join(cwd, '.claude', 'CLAUDE.md');
+        if (!projectClaudeOverlapsUserScope && fs.existsSync(dotClaudeMd)) {
+            addClaudeMd(claudeMdFiles, dotClaudeMd, homeDir, cwd);
+        }
+        // {cwd}/.claude/CLAUDE.local.md
+        const dotClaudeLocalMd = path.join(cwd, '.claude', 'CLAUDE.local.md');
+        if (fs.existsSync(dotClaudeLocalMd)) {
+            addClaudeMd(claudeMdFiles, dotClaudeLocalMd, homeDir, cwd);
+        }
+        // {cwd}/.claude/rules/*.md (recursive)
+        // Skip when it overlaps with user-scope rules.
+        if (!projectClaudeOverlapsUserScope) {
+            rulesCount += countRulesInDir(path.join(cwd, '.claude', 'rules'));
+        }
+        // {cwd}/.mcp.json (project MCP config) - tracked separately for disabled filtering
+        const mcpJsonServers = getMcpServerNames(path.join(cwd, '.mcp.json'));
+        // {cwd}/.claude/settings.json (project settings)
+        // Skip when it overlaps with user-scope settings.
+        const projectSettings = path.join(cwd, '.claude', 'settings.json');
+        if (!projectClaudeOverlapsUserScope) {
+            for (const name of getMcpServerNames(projectSettings)) {
+                projectMcpServers.add(name);
+            }
+            hooksCount += countHooksInFile(projectSettings);
+        }
+        // {cwd}/.claude/settings.local.json (local project settings)
+        const localSettings = path.join(cwd, '.claude', 'settings.local.json');
+        for (const name of getMcpServerNames(localSettings)) {
+            projectMcpServers.add(name);
+        }
+        hooksCount += countHooksInFile(localSettings);
+        // Get disabled .mcp.json servers from settings.local.json
+        const disabledMcpJsonServers = getDisabledMcpServers(localSettings, 'disabledMcpjsonServers');
+        for (const name of disabledMcpJsonServers) {
+            mcpJsonServers.delete(name);
+        }
+        // Add remaining .mcp.json servers to project set
+        for (const name of mcpJsonServers) {
+            projectMcpServers.add(name);
+        }
+    }
+    // Total MCP count = user servers + project servers
+    // Note: Deduplication only occurs within each scope, not across scopes.
+    // A server with the same name in both user and project scope counts as 2 (separate configs).
+    const mcpCount = userMcpServers.size + projectMcpServers.size;
+    const plugins = getInstalledPlugins(cwd);
+    return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount, mcpCount, hooksCount, plugins };
+}
+function getEnabledPluginKeys(settingsPath) {
+    if (!fs.existsSync(settingsPath))
+        return new Set();
+    try {
+        const content = fs.readFileSync(settingsPath, 'utf8');
+        const config = JSON.parse(content);
+        if (!config.enabledPlugins || typeof config.enabledPlugins !== 'object')
+            return new Set();
+        return new Set(Object.entries(config.enabledPlugins)
+            .filter(([, v]) => v === true)
+            .map(([k]) => k));
+    }
+    catch (error) {
+        debug('Failed to read enabledPlugins:', error);
+        return new Set();
+    }
+}
+function getInstalledPlugins(cwd) {
+    const homeDir = os.homedir();
+    const claudeDir = getClaudeConfigDir(homeDir);
+    const installedPluginsPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
+    if (!fs.existsSync(installedPluginsPath))
+        return [];
+    // Collect enabled plugin keys from user settings (and optionally project settings)
+    const enabledKeys = getEnabledPluginKeys(path.join(claudeDir, 'settings.json'));
+    if (cwd) {
+        for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.json'))) {
+            enabledKeys.add(key);
+        }
+        for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.local.json'))) {
+            enabledKeys.add(key);
+        }
+    }
+    try {
+        const content = fs.readFileSync(installedPluginsPath, 'utf8');
+        const data = JSON.parse(content);
+        if (!data.plugins || typeof data.plugins !== 'object')
+            return [];
+        const result = [];
+        for (const [key, entries] of Object.entries(data.plugins)) {
+            if (!enabledKeys.has(key))
+                continue;
+            const name = key.split('@')[0];
+            const scopes = new Set();
+            for (const entry of entries) {
+                if (entry.scope === 'user') {
+                    scopes.add('global');
+                }
+                else if (entry.scope === 'local' && cwd && entry.projectPath === cwd) {
+                    scopes.add('local');
+                }
+            }
+            if (scopes.size > 0) {
+                result.push({ name, scopes: [...scopes] });
+            }
+        }
+        return result;
+    }
+    catch (error) {
+        debug('Failed to read installed plugins:', error);
+        return [];
+    }
+}
+//# sourceMappingURL=config-reader.js.map
