@@ -28,17 +28,21 @@ else
   git -C "$SCRIPT_DIR" worktree add -b "$DEPLOY_BRANCH" "$WORKTREE_DIR" "$SOURCE_BRANCH"
 fi
 
-echo "Merging '$SOURCE_BRANCH'..."
-git -C "$WORKTREE_DIR" merge "$SOURCE_BRANCH" --no-edit
+echo "Merging '$SOURCE_BRANCH' (no-commit)..."
+git -C "$WORKTREE_DIR" merge "$SOURCE_BRANCH" --no-commit --no-ff
 
 echo "Force-adding dist/..."
 cp -r "$SCRIPT_DIR/dist" "$WORKTREE_DIR/dist"
 git -C "$WORKTREE_DIR" add -f "$WORKTREE_DIR/dist"
 
 if git -C "$WORKTREE_DIR" diff --cached --quiet; then
-  echo "No changes in dist/ to commit."
+  echo "No changes to commit."
+  git -C "$WORKTREE_DIR" merge --abort 2>/dev/null || true
 else
-  git -C "$WORKTREE_DIR" commit -m "build: sync dist from $SOURCE_BRANCH"
+  git -C "$WORKTREE_DIR" commit -m "deploy: merge $SOURCE_BRANCH with dist"
 fi
+
+echo "Pushing '$DEPLOY_BRANCH' to origin..."
+git -C "$WORKTREE_DIR" push origin "$DEPLOY_BRANCH"
 
 echo "Done. '$DEPLOY_BRANCH' branch is up to date with dist/ included."
