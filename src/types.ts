@@ -126,6 +126,8 @@ export interface RenderContext {
   mcpCount: number;
   hooksCount: number;
   plugins: PluginInfo[];
+  thinkingBudget: number | null;
+  effort: string | null;
   sessionDuration: string;
   gitStatus: GitStatus | null;
   usageData: UsageData | null;

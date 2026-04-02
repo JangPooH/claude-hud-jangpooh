@@ -32,6 +32,8 @@ export interface ConfigCounts {
   mcpCount: number;
   hooksCount: number;
   plugins: PluginInfo[];
+  thinkingBudget: number | null;
+  effort: string | null;
 }
 
 // Valid keys for disabled MCP arrays in config files
@@ -203,12 +205,23 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   // ~/.claude/rules/*.md
   globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global'));
 
-  // ~/.claude/settings.json (MCPs and hooks)
+  // ~/.claude/settings.json (MCPs, hooks, thinking, effort)
   const userSettings = path.join(claudeDir, 'settings.json');
   for (const name of getMcpServerNames(userSettings)) {
     userMcpServers.add(name);
   }
   hooksCount += countHooksInFile(userSettings);
+
+  let thinkingBudget: number | null = null;
+  let effort: string | null = null;
+  try {
+    const settingsContent = fs.readFileSync(userSettings, 'utf8');
+    const settingsJson = JSON.parse(settingsContent);
+    if (settingsJson.thinking?.enabled === true) {
+      if (typeof settingsJson.thinking.budget_tokens === 'number') thinkingBudget = settingsJson.thinking.budget_tokens;
+    }
+    if (typeof settingsJson.effort === 'string') effort = settingsJson.effort;
+  } catch { /* non-fatal */ }
 
   // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
   const userClaudeJson = getClaudeConfigJsonPath(homeDir);
@@ -301,7 +314,7 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   const plugins = getInstalledPlugins(cwd);
   const allRulesFiles = [...globalRulesFiles, ...localRulesFiles];
 
-  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins };
+  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort };
 }
 
 function getEnabledPluginKeys(settingsPath: string): Set<string> {

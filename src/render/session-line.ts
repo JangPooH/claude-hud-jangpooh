@@ -43,9 +43,9 @@ export function renderSessionLine(ctx: RenderContext): string {
   const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
 
   if (display?.showModel !== false && display?.showContextBar !== false) {
-    parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${bar} ${contextValueDisplay}`);
+    parts.push(`${modelColor(`[${modelDisplay}]`, model, colors)} ${bar} ${contextValueDisplay}`);
   } else if (display?.showModel !== false) {
-    parts.push(`${modelColor(`[${modelDisplay}]`, colors)} ${contextValueDisplay}`);
+    parts.push(`${modelColor(`[${modelDisplay}]`, model, colors)} ${contextValueDisplay}`);
   } else if (display?.showContextBar !== false) {
     parts.push(`${bar} ${contextValueDisplay}`);
   } else {

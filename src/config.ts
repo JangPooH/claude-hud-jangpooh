@@ -27,7 +27,7 @@ export interface HudColorOverrides {
   warning: HudColorValue;
   usageWarning: HudColorValue;
   critical: HudColorValue;
-  model: HudColorValue;
+  model?: HudColorValue;
   project: HudColorValue;
   git: HudColorValue;
   gitBranch: HudColorValue;
@@ -129,7 +129,6 @@ export const DEFAULT_CONFIG: HudConfig = {
     warning: 'yellow',
     usageWarning: 'brightMagenta',
     critical: 'red',
-    model: 'cyan',
     project: 'yellow',
     git: 'magenta',
     gitBranch: 'cyan',
@@ -352,7 +351,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.colors.critical,
     model: validateColorValue(migrated.colors?.model)
       ? migrated.colors.model
-      : DEFAULT_CONFIG.colors.model,
+      : undefined,
     project: validateColorValue(migrated.colors?.project)
       ? migrated.colors.project
       : DEFAULT_CONFIG.colors.project,

@@ -106,8 +106,19 @@ export function claudeOrange(text: string): string {
   return colorize(text, CLAUDE_ORANGE);
 }
 
-export function model(text: string, colors?: Partial<HudColorOverrides>): string {
-  return withOverride(text, colors?.model, CYAN);
+function getModelFamilyColor(modelName: string): string {
+  const lower = modelName.toLowerCase();
+  if (lower.includes('haiku')) return GREEN;
+  if (lower.includes('opus')) return CLAUDE_ORANGE;
+  return CYAN;
+}
+
+export function model(text: string, modelName?: string, colors?: Partial<HudColorOverrides>): string {
+  return withOverride(text, colors?.model, getModelFamilyColor(modelName ?? ''));
+}
+
+export function dimModel(text: string, modelName?: string, colors?: Partial<HudColorOverrides>): string {
+  return `${DIM}${resolveAnsi(colors?.model, getModelFamilyColor(modelName ?? ''))}${text}${RESET}`;
 }
 
 export function project(text: string, colors?: Partial<HudColorOverrides>): string {
