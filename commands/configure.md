@@ -66,6 +66,7 @@ Questions: **Turn Off → Turn On → Git Style → Layout/Reset → Custom Line
   - "Usage limits" - 5h: 25% | 7d: 10%
   - "Session duration" - ⏱️ 5m
   - "Session name" - fix-auth-bug (session slug or custom title)
+  - "Cost display" - 💰 $0.012 / $0.045 (turn / session)
 
 ### Q4: Turn On (based on chosen preset)
 - header: "Turn On"
@@ -119,6 +120,7 @@ Info items (Counts, Tokens, Usage, Speed, Duration) can be turned off via "Reset
   - "Usage bar style" - ██░░ 25% visual bar (only if usageBarEnabled is false)
   - "Session name" - fix-auth-bug (session slug or custom title)
   - "Session duration" - ⏱️ 5m
+  - "Cost display" - 💰 $0.012 / $0.045 (turn / session)
 
 ### Q3: Git Style (only if Git is currently enabled)
 - header: "Git Style"
@@ -161,7 +163,7 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 
 **Full** (everything ON):
 - Activity: Tools ON, Agents ON, Todos ON
-- Info: Counts ON, Tokens ON, Usage ON, Duration ON, Session Name ON
+- Info: Counts ON, Tokens ON, Usage ON, Duration ON, Session Name ON, Cost ON
 - Git: ON (with dirty indicator, no ahead/behind)
 
 **Essential** (activity + git):
@@ -213,6 +215,7 @@ If user chooses "Remove", set `display.customLine` to `""` in config.
 | Usage bar style | `display.usageBarEnabled` |
 | Session name | `display.showSessionName` |
 | Session duration | `display.showDuration` |
+| Cost display | `display.showCost` |
 | Custom line | `display.customLine` |
 
 **Always true (not configurable):**
