@@ -111,6 +111,7 @@ export interface TranscriptData {
   sessionCost: number;
   userTurnCount: number;
   unknownPricingModels: string[];
+  thinkingBudgetExhaustedAtTurn: number | null;
 }
 
 export interface RenderContext {

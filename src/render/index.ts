@@ -490,7 +490,10 @@ export function render(ctx: RenderContext): void {
   if (unknownModels?.length) {
     const modelList = unknownModels.join(', ');
     lines.unshift(warning(`⚠ Unknown pricing: ${modelList} — execute claude req: claude-hud 플러그인에서 pricing.json에 ${modelList}를 추가하고, pricing.json에 있는 모든 model의 pricing table을 최신 정보로 업데이트`));
+  }
 
+  if (ctx.transcript.thinkingBudgetExhaustedAtTurn !== null) {
+    lines.unshift(warning(`⚠ Thinking budget exhausted — 마지막 응답이 thinking token budget을 모두 소진해 실제 응답을 생성하지 못했습니다. /settings에서 thinking budget을 늘리거나 thinking을 비활성화하세요.`));
   }
 
   const physicalLines = lines.flatMap(line => line.split('\n'));

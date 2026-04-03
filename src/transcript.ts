@@ -14,6 +14,7 @@ interface TranscriptLine {
   message?: {
     id?: string;
     model?: string;
+    stop_reason?: string | null;
     content?: ContentBlock[];
     usage?: {
       input_tokens?: number;
@@ -59,6 +60,7 @@ interface SerializedTranscriptData {
   sessionCost?: number;
   userTurnCount?: number;
   unknownPricingModels?: string[];
+  thinkingBudgetExhaustedAtTurn?: number | null;
 }
 
 interface TranscriptCacheFile {
@@ -108,6 +110,7 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     sessionCost: data.sessionCost,
     userTurnCount: data.userTurnCount,
     unknownPricingModels: data.unknownPricingModels,
+    thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn,
   };
 }
 
@@ -130,6 +133,7 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     sessionCost: data.sessionCost ?? 0,
     userTurnCount: data.userTurnCount ?? 0,
     unknownPricingModels: data.unknownPricingModels ?? [],
+    thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn ?? null,
   };
 }
 
@@ -176,6 +180,7 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     sessionCost: 0,
     userTurnCount: 0,
     unknownPricingModels: [],
+    thinkingBudgetExhaustedAtTurn: null,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -298,6 +303,24 @@ function processEntry(
     }
     if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model) && entry.message.model !== '<synthetic>') {
       result.unknownPricingModels.push(entry.message.model);
+    }
+
+    // Detect thinking budget exhaustion:
+    // stop_reason=max_tokens + content contains thinking block(s) but no text/tool_use response
+    if (Array.isArray(entry.message.content)) {
+      const blocks = entry.message.content;
+      const hasThinking = blocks.some((b) => b.type === 'thinking');
+      const hasTextOrTool = blocks.some((b) => b.type === 'text' || b.type === 'tool_use');
+      if (entry.message.stop_reason === 'max_tokens' && hasThinking && !hasTextOrTool) {
+        result.thinkingBudgetExhaustedAtTurn = result.userTurnCount;
+      } else if (
+        result.thinkingBudgetExhaustedAtTurn !== null &&
+        result.userTurnCount > result.thinkingBudgetExhaustedAtTurn &&
+        hasTextOrTool
+      ) {
+        // New user turn came after exhaustion and we got a real response → clear
+        result.thinkingBudgetExhaustedAtTurn = null;
+      }
     }
   }
 
