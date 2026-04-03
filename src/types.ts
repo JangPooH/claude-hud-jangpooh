@@ -121,9 +121,10 @@ export interface RenderContext {
   claudeMdFiles: ClaudeMdFile[];
   rulesCount: number;
   globalRulesCount: number;
+  parentRulesCount: number;
   localRulesCount: number;
   rulesFiles: RulesFileInfo[];
-  matchedRulesFiles: { name: string; scope: 'global' | 'local' }[];
+  matchedRulesFiles: { name: string; scope: 'global' | 'parent' | 'local' }[];
   mcpCount: number;
   hooksCount: number;
   plugins: PluginInfo[];

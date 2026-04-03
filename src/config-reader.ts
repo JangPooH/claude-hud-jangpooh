@@ -19,7 +19,8 @@ export interface PluginInfo {
 export interface RulesFileInfo {
   name: string;   // basename (e.g. "stdin-fields.md")
   paths: string[]; // patterns from frontmatter `paths:` field
-  scope: 'global' | 'local';
+  scope: 'global' | 'parent' | 'local';
+  baseDir: string; // directory containing .claude/ (for resolving relative paths)
 }
 
 export interface ConfigCounts {
@@ -27,6 +28,7 @@ export interface ConfigCounts {
   claudeMdFiles: ClaudeMdFile[];
   rulesCount: number;
   globalRulesCount: number;
+  parentRulesCount: number;
   localRulesCount: number;
   rulesFiles: RulesFileInfo[];
   mcpCount: number;
@@ -110,7 +112,7 @@ function parsePathsFromFrontmatter(content: string): string[] {
   return result;
 }
 
-function collectRulesFilesInDir(rulesDir: string, scope: 'global' | 'local'): RulesFileInfo[] {
+function collectRulesFilesInDir(rulesDir: string, scope: 'global' | 'parent' | 'local', baseDir: string): RulesFileInfo[] {
   if (!fs.existsSync(rulesDir)) return [];
   const result: RulesFileInfo[] = [];
   try {
@@ -118,14 +120,14 @@ function collectRulesFilesInDir(rulesDir: string, scope: 'global' | 'local'): Ru
     for (const entry of entries) {
       const fullPath = path.join(rulesDir, entry.name);
       if (entry.isDirectory()) {
-        result.push(...collectRulesFilesInDir(fullPath, scope));
+        result.push(...collectRulesFilesInDir(fullPath, scope, baseDir));
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
         let paths: string[] = [];
         try {
           const content = fs.readFileSync(fullPath, 'utf8');
           paths = parsePathsFromFrontmatter(content);
         } catch { /* non-fatal */ }
-        result.push({ name: entry.name, paths, scope });
+        result.push({ name: entry.name, paths, scope, baseDir });
       }
     }
   } catch (error) {
@@ -184,6 +186,7 @@ function addClaudeMd(files: ClaudeMdFile[], filePath: string, homeDir: string, c
 export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   const claudeMdFiles: ClaudeMdFile[] = [];
   const globalRulesFiles: RulesFileInfo[] = [];
+  const parentRulesFiles: RulesFileInfo[] = [];
   const localRulesFiles: RulesFileInfo[] = [];
   let hooksCount = 0;
 
@@ -202,8 +205,8 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     addClaudeMd(claudeMdFiles, userClaudeMd, homeDir, cwd);
   }
 
-  // ~/.claude/rules/*.md
-  globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global'));
+  // ~/.claude/rules/*.md  (baseDir = homeDir, i.e. parent of ~/.claude)
+  globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global', homeDir));
 
   // ~/.claude/settings.json (MCPs, hooks, thinking, effort)
   const userSettings = path.join(claudeDir, 'settings.json');
@@ -271,7 +274,7 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     // {cwd}/.claude/rules/*.md (recursive)
     // Skip when it overlaps with user-scope rules.
     if (!projectClaudeOverlapsUserScope) {
-      localRulesFiles.push(...collectRulesFilesInDir(path.join(cwd, '.claude', 'rules'), 'local'));
+      localRulesFiles.push(...collectRulesFilesInDir(path.join(cwd, '.claude', 'rules'), 'local', cwd));
     }
 
     // {cwd}/.mcp.json (project MCP config) - tracked separately for disabled filtering
@@ -304,6 +307,36 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     for (const name of mcpJsonServers) {
       projectMcpServers.add(name);
     }
+
+    // === PARENT DIRS (cwd → root, exclusive of cwd itself) ===
+    let parentDir = path.dirname(cwd);
+    const fsRoot = path.parse(parentDir).root;
+    while (parentDir !== fsRoot) {
+      const parentClaudeDir = path.join(parentDir, '.claude');
+      const overlapsUser = pathsReferToSameLocation(parentClaudeDir, claudeDir);
+
+      // CLAUDE.md files → add to claudeMdFiles
+      const parentClaudeMd = path.join(parentDir, 'CLAUDE.md');
+      if (fs.existsSync(parentClaudeMd)) {
+        addClaudeMd(claudeMdFiles, parentClaudeMd, homeDir, cwd);
+      }
+      const parentClaudeLocalMd = path.join(parentDir, 'CLAUDE.local.md');
+      if (fs.existsSync(parentClaudeLocalMd)) {
+        addClaudeMd(claudeMdFiles, parentClaudeLocalMd, homeDir, cwd);
+      }
+      if (!overlapsUser) {
+        const parentDotClaudeMd = path.join(parentDir, '.claude', 'CLAUDE.md');
+        if (fs.existsSync(parentDotClaudeMd)) {
+          addClaudeMd(claudeMdFiles, parentDotClaudeMd, homeDir, cwd);
+        }
+        // .claude/rules → scope: 'parent', baseDir = parentDir
+        parentRulesFiles.push(...collectRulesFilesInDir(path.join(parentDir, '.claude', 'rules'), 'parent', parentDir));
+      }
+
+      const next = path.dirname(parentDir);
+      if (next === parentDir) break;
+      parentDir = next;
+    }
   }
 
   // Total MCP count = user servers + project servers
@@ -312,9 +345,9 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
   const mcpCount = userMcpServers.size + projectMcpServers.size;
 
   const plugins = getInstalledPlugins(cwd);
-  const allRulesFiles = [...globalRulesFiles, ...localRulesFiles];
+  const allRulesFiles = [...globalRulesFiles, ...parentRulesFiles, ...localRulesFiles];
 
-  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort };
+  return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, parentRulesCount: parentRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort };
 }
 
 function getEnabledPluginKeys(settingsPath: string): Set<string> {

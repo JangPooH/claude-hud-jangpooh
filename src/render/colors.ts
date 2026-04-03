@@ -14,6 +14,7 @@ const BRIGHT_RED = '\x1b[91m';
 const BRIGHT_BLUE = '\x1b[94m';
 const BRIGHT_MAGENTA = '\x1b[95m';
 const CLAUDE_ORANGE = '\x1b[38;5;208m';
+const PURPLE = '\x1b[38;5;135m';
 
 const ANSI_BY_NAME: Record<HudColorName, string> = {
   dim: DIM,
@@ -198,6 +199,14 @@ export function dimBrightBlue(text: string): string {
 
 export function dimClaudeOrange(text: string): string {
   return `${DIM}${CLAUDE_ORANGE}${text}${RESET}`;
+}
+
+export function purple(text: string): string {
+  return colorize(text, PURPLE);
+}
+
+export function dimPurple(text: string): string {
+  return `${DIM}${PURPLE}${text}${RESET}`;
 }
 
 export function dimYellow(text: string): string {
