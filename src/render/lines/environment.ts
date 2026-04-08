@@ -18,13 +18,13 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const parts: string[] = [];
 
   if (ctx.claudeMdFiles.length > 0) {
-    const fileParts = ctx.claudeMdFiles.map(file => {
+    const fileParts = ctx.claudeMdFiles.filter(file => file.tokens > 0).map(file => {
       const count = file.tokens >= 1000
         ? `${(file.tokens / 1000).toFixed(1)}k`
         : `${file.tokens}`;
       return `${file.displayPath} (${count})`;
     });
-    parts.push(`Mem: ${dim(fileParts.join(', '))}`);
+    if (fileParts.length > 0) parts.push(`Mem: ${dim(fileParts.join(', '))}`);
   }
 
   if (ctx.rulesCount > 0) {

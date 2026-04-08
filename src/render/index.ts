@@ -496,6 +496,16 @@ export function render(ctx: RenderContext): void {
     lines.unshift(warning(`⚠ Thinking budget exhausted — 마지막 응답이 thinking token budget을 모두 소진해 실제 응답을 생성하지 못했습니다. /settings에서 thinking budget을 늘리거나 thinking을 비활성화하세요.`));
   }
 
+  const cache5m = ctx.transcript.cacheCreation5mTokens;
+  const cache1h = ctx.transcript.cacheCreation1hTokens;
+  if (cache5m > 0) {
+    const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+    const detail = cache1h > 0
+      ? `5m: ${fmt(cache5m)} / 1h: ${fmt(cache1h)}`
+      : `${fmt(cache5m)} tokens`;
+    lines.unshift(warning(`⚠ 5m cache 감지 (${detail}) — cc-cache-fix가 미적용 상태입니다`));
+  }
+
   const physicalLines = lines.flatMap(line => line.split('\n'));
   const visibleLines = terminalWidth
     ? physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth))

@@ -21,6 +21,10 @@ interface TranscriptLine {
       output_tokens?: number;
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
+      cache_creation?: {
+        ephemeral_5m_input_tokens?: number;
+        ephemeral_1h_input_tokens?: number;
+      };
     };
   };
 }
@@ -61,6 +65,8 @@ interface SerializedTranscriptData {
   userTurnCount?: number;
   unknownPricingModels?: string[];
   thinkingBudgetExhaustedAtTurn?: number | null;
+  cacheCreation5mTokens?: number;
+  cacheCreation1hTokens?: number;
 }
 
 interface TranscriptCacheFile {
@@ -111,6 +117,8 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     userTurnCount: data.userTurnCount,
     unknownPricingModels: data.unknownPricingModels,
     thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn,
+    cacheCreation5mTokens: data.cacheCreation5mTokens,
+    cacheCreation1hTokens: data.cacheCreation1hTokens,
   };
 }
 
@@ -134,6 +142,8 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     userTurnCount: data.userTurnCount ?? 0,
     unknownPricingModels: data.unknownPricingModels ?? [],
     thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn ?? null,
+    cacheCreation5mTokens: data.cacheCreation5mTokens ?? 0,
+    cacheCreation1hTokens: data.cacheCreation1hTokens ?? 0,
   };
 }
 
@@ -181,6 +191,8 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     userTurnCount: 0,
     unknownPricingModels: [],
     thinkingBudgetExhaustedAtTurn: null,
+    cacheCreation5mTokens: 0,
+    cacheCreation1hTokens: 0,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -282,24 +294,33 @@ function processEntry(
     const out = u.output_tokens ?? 0;
     const cc = u.cache_creation_input_tokens ?? 0;
     const cr = u.cache_read_input_tokens ?? 0;
+    const cc5m = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
+    const cc1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+    const hasCacheBreakdown = cc5m + cc1h > 0;
     const { pricing, isUnknown } = getPricing(entry.message.model);
-    const cost = (inp * pricing.inputPerMTok + out * pricing.outputPerMTok + cc * pricing.cacheWritePerMTok + cr * pricing.cacheReadPerMTok) / 1_000_000;
+    const cacheWrite1h = pricing.cacheWrite1hPerMTok ?? pricing.inputPerMTok * 2;
+    const cost = hasCacheBreakdown
+      ? (inp * pricing.inputPerMTok + out * pricing.outputPerMTok + cc5m * pricing.cacheWritePerMTok + cc1h * cacheWrite1h + cr * pricing.cacheReadPerMTok) / 1_000_000
+      : (inp * pricing.inputPerMTok + out * pricing.outputPerMTok + cc * pricing.cacheWritePerMTok + cr * pricing.cacheReadPerMTok) / 1_000_000;
     const toolNames = Array.isArray(entry.message.content)
       ? entry.message.content.filter((b) => b.type === 'tool_use' && b.name).map((b) => b.name!)
       : [];
     const msgId = entry.message.id;
     const existingIdx = msgId ? parseState.seenMessageIds.get(msgId) : undefined;
+    const cacheBreakdownFields = hasCacheBreakdown ? { cacheCreation5mTokens: cc5m, cacheCreation1hTokens: cc1h } : {};
     if (existingIdx != null) {
       // 같은 mid 재등장 → detail log용으로 append (usage/cost 동일, tool_use 블록이 늘어남)
       // sessionCost는 이미 계산됨 → 추가하지 않음
       const prev = result.turnCosts[existingIdx];
-      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: prev.userTurn, userMessage: prev.userMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, ...cacheBreakdownFields, cacheReadTokens: cr, cost, userTurn: prev.userTurn, userMessage: prev.userMessage, tools: toolNames.length > 0 ? toolNames : undefined });
     } else {
       const idx = result.turnCosts.length;
-      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, ...cacheBreakdownFields, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
       if (msgId) parseState.seenMessageIds.set(msgId, idx);
       parseState.pendingUserMessage = undefined;
       result.sessionCost += cost;
+      result.cacheCreation5mTokens += cc5m;
+      result.cacheCreation1hTokens += cc1h;
     }
     if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model) && entry.message.model !== '<synthetic>') {
       result.unknownPricingModels.push(entry.message.model);

@@ -313,7 +313,9 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     const fsRoot = path.parse(parentDir).root;
     while (parentDir !== fsRoot) {
       const parentClaudeDir = path.join(parentDir, '.claude');
-      const overlapsUser = pathsReferToSameLocation(parentClaudeDir, claudeDir);
+      const defaultClaudeDir = path.join(homeDir, '.claude');
+      const overlapsUser = pathsReferToSameLocation(parentClaudeDir, claudeDir)
+        || pathsReferToSameLocation(parentClaudeDir, defaultClaudeDir);
 
       // CLAUDE.md files → add to claudeMdFiles
       const parentClaudeMd = path.join(parentDir, 'CLAUDE.md');
@@ -336,6 +338,27 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
       const next = path.dirname(parentDir);
       if (next === parentDir) break;
       parentDir = next;
+    }
+  }
+
+  // === AUTO-MEMORY SCOPE ===
+  if (cwd) {
+    const autoMemBase = path.join(homeDir, '.claude-nonstop', 'profiles');
+    if (fs.existsSync(autoMemBase)) {
+      const encodedCwd = cwd.replace(/\//g, '-');
+      try {
+        const profiles = fs.readdirSync(autoMemBase, { withFileTypes: true });
+        for (const profile of profiles) {
+          if (!profile.isDirectory()) continue;
+          const memoryFile = path.join(autoMemBase, profile.name, 'projects', encodedCwd, 'memory', 'MEMORY.md');
+          if (fs.existsSync(memoryFile)) {
+            const tokens = getFileTokens(memoryFile);
+            claudeMdFiles.push({ displayPath: '{auto-mem}/MEMORY.md', tokens });
+          }
+        }
+      } catch (error) {
+        debug('Failed to read auto-memory files:', error);
+      }
     }
   }
 
