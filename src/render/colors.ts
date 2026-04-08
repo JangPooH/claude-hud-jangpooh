@@ -125,10 +125,20 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [Math.round(hue2rgb(h + 1/3) * 255), Math.round(hue2rgb(h) * 255), Math.round(hue2rgb(h - 1/3) * 255)];
 }
 
-function brightenRgb(r: number, g: number, b: number): string {
+const L_MIN = 0.2;
+const L_MAX = 1.0;
+const L_MID = (L_MIN + L_MAX) / 2;  // 0.55
+
+function brightRgb(r: number, g: number, b: number): string {
   const [h, s, l] = rgbToHsl(r, g, b);
-  const [br, bg, bb] = hslToRgb(h, s, l + (1 - l) * 0.33);
+  const [br, bg, bb] = hslToRgb(h, s, l + (L_MAX - l) * 0.33);
   return `\x1b[38;2;${br};${bg};${bb}m`;
+}
+
+function dimRgb(r: number, g: number, b: number): string {
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const [dr, dg, db] = hslToRgb(h, s, l - (l - L_MIN) * 0.33);
+  return `\x1b[38;2;${dr};${dg};${db}m`;
 }
 
 // xterm standard RGB values for basic 8-color and bright 16-color
@@ -154,35 +164,43 @@ const BRIGHT16_RGB: Record<number, [number, number, number]> = {
   15: [255, 255, 255],  // bright white
 };
 
-/** Returns a brighter version of the given ANSI color code.
- *  Basic 8-color (\x1b[3Xm): maps to bright variant (\x1b[9Xm).
- *  Bright 16-color (\x1b[9Xm): converts via xterm RGB then HSL +33%.
- *  256-color / truecolor: increases HSL lightness by 33%.
- */
-export function bright(ansiColor: string): string {
+/** Extract [r,g,b] from an ANSI color escape, or null if unrecognised. */
+function ansiToRgb(ansiColor: string): [number, number, number] | null {
   const basic = ansiColor.match(/^\x1b\[3([0-7])m$/);
-  if (basic) {
-    const rgb = BASIC8_RGB[+basic[1]];
-    return rgb ? brightenRgb(...rgb) : ansiColor;
-  }
+  if (basic) return BASIC8_RGB[+basic[1]] ?? null;
 
   const bright16 = ansiColor.match(/^\x1b\[9([0-7])m$/);
-  if (bright16) {
-    const rgb = BRIGHT16_RGB[8 + +bright16[1]];
-    return rgb ? brightenRgb(...rgb) : ansiColor;
-  }
+  if (bright16) return BRIGHT16_RGB[8 + +bright16[1]] ?? null;
 
   const c256 = ansiColor.match(/^\x1b\[38;5;(\d+)m$/);
   if (c256) {
     const n = +c256[1];
-    if (n < 16) return ansiColor; // terminal-defined, can't reliably brighten
-    return brightenRgb(...color256ToRgb(n));
+    if (n < 16) return null;
+    return color256ToRgb(n);
   }
 
   const tc = ansiColor.match(/^\x1b\[38;2;(\d+);(\d+);(\d+)m$/);
-  if (tc) return brightenRgb(+tc[1], +tc[2], +tc[3]);
+  if (tc) return [+tc[1], +tc[2], +tc[3]];
 
-  return ansiColor; // unknown format, return as-is
+  return null;
+}
+
+/** Returns a brighter version of the given ANSI color code via HSL L +33%. */
+export function bright(ansiColor: string): string {
+  const rgb = ansiToRgb(ansiColor);
+  if (!rgb) return ansiColor;
+  return brightRgb(...rgb);
+}
+
+/**
+ * Returns dimRgb(color) if HSL L >= 0.5, otherwise brightRgb(color).
+ * Ensures the time marker always visually contrasts with surrounding filled bars.
+ */
+export function dimOrBright(ansiColor: string): string {
+  const rgb = ansiToRgb(ansiColor);
+  if (!rgb) return ansiColor;
+  const [, , l] = rgbToHsl(...rgb);
+  return l >= L_MID ? dimRgb(...rgb) : brightRgb(...rgb);
 }
 
 export function brightBlue(text: string): string {
@@ -296,7 +314,7 @@ export function quotaBar(percent: number, width: number = 10, colors?: Partial<H
 }
 
 function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>): string {
-  return bright(getQuotaColor(percent, colors));
+  return dimOrBright(getQuotaColor(percent, colors));
 }
 
 export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
