@@ -498,7 +498,11 @@ export function render(ctx: RenderContext): void {
 
   const cache5m = ctx.transcript.cacheCreation5mTokens;
   const cache1h = ctx.transcript.cacheCreation1hTokens;
-  if (cache5m > 0) {
+  const modelId = ctx.stdin?.model?.id ?? '';
+  const isHaiku = modelId.toLowerCase().includes('haiku');
+  const isLowThinking = ctx.thinkingBudget === null || ctx.thinkingBudget < 2000;
+  const isLowEffort = ctx.effort === 'low';
+  if (cache5m > 0 && !isHaiku && !isLowThinking && !isLowEffort) {
     const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
     const detail = cache1h > 0
       ? `5m: ${fmt(cache5m)} / 1h: ${fmt(cache1h)}`
