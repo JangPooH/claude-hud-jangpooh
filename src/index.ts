@@ -126,7 +126,9 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await deps.parseTranscript(transcriptPath);
 
-    const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, parentRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort } = await deps.countConfigs(stdin.cwd);
+    const nonstopInfo = await deps.getNonstopInfo(stdin.transcript_path);
+
+    const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, parentRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort } = await deps.countConfigs(stdin.cwd, nonstopInfo?.currentAccount ?? undefined);
 
     const config = await deps.loadConfig();
     const gitStatus = config.gitStatus.enabled
@@ -149,8 +151,6 @@ const transcriptPath = stdin.transcript_path ?? '';
     const memoryUsage = config.display.showMemoryUsage && config.lineLayout === 'expanded'
       ? await deps.getMemoryUsage()
       : null;
-
-    const nonstopInfo = await deps.getNonstopInfo(stdin.transcript_path);
 
     if (transcriptPath) {
       writeBaseline(transcriptPath, stdin.cost?.total_cost_usd ?? null, stdin.cost?.total_api_duration_ms ?? null);

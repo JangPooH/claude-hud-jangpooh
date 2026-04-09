@@ -1,6 +1,40 @@
 import type { RenderContext } from '../../types.js';
 import { label, dim, claudeOrange, yellow, purple, dimClaudeOrange, dimYellow, dimPurple } from '../colors.js';
 
+const ANSI_STRIP_RE = /\x1b\[[0-9;]*m/g;
+const ENV_MAX_WIDTH = 120;
+
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_STRIP_RE, '');
+}
+
+// Word-wrap a single part (which may contain ANSI codes) at word boundaries.
+function wordWrapPart(part: string, maxWidth: number): string[] {
+  if (stripAnsi(part).length <= maxWidth) return [part];
+
+  const words = part.split(' ');
+  const result: string[] = [];
+  let current = '';
+  let currentPlain = '';
+
+  for (const word of words) {
+    const wordPlain = stripAnsi(word);
+    const candidate = current ? `${current} ${word}` : word;
+    const candidatePlain = currentPlain ? `${currentPlain} ${wordPlain}` : wordPlain;
+
+    if (candidatePlain.length > maxWidth && current) {
+      result.push(current);
+      current = word;
+      currentPlain = wordPlain;
+    } else {
+      current = candidate;
+      currentPlain = candidatePlain;
+    }
+  }
+  if (current) result.push(current);
+  return result;
+}
+
 export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
 
@@ -67,5 +101,38 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
     return null;
   }
 
-  return label(parts.join(' | '), ctx.config?.colors);
+  const colors = ctx.config?.colors;
+  const outputLines: string[] = [];
+  let currentGroup: string[] = [];
+
+  const flushGroup = () => {
+    if (currentGroup.length > 0) {
+      outputLines.push(label(currentGroup.join(' | '), colors));
+      currentGroup = [];
+    }
+  };
+
+  for (const part of parts) {
+    // If this part alone exceeds the limit, word-wrap it independently
+    if (stripAnsi(part).length > ENV_MAX_WIDTH) {
+      flushGroup();
+      for (const wrapped of wordWrapPart(part, ENV_MAX_WIDTH)) {
+        outputLines.push(label(wrapped, colors));
+      }
+      continue;
+    }
+
+    // Try adding to current group
+    const candidate = [...currentGroup, part].join(' | ');
+    if (stripAnsi(label(candidate, colors)).length > ENV_MAX_WIDTH && currentGroup.length > 0) {
+      flushGroup();
+      currentGroup = [part];
+    } else {
+      currentGroup.push(part);
+    }
+  }
+
+  flushGroup();
+
+  return outputLines.length > 0 ? outputLines.join('\n') : null;
 }

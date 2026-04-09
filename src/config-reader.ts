@@ -183,7 +183,7 @@ function addClaudeMd(files: ClaudeMdFile[], filePath: string, homeDir: string, c
   files.push({ displayPath, tokens });
 }
 
-export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
+export async function countConfigs(cwd?: string, activeNonstopProfile?: string): Promise<ConfigCounts> {
   const claudeMdFiles: ClaudeMdFile[] = [];
   const globalRulesFiles: RulesFileInfo[] = [];
   const parentRulesFiles: RulesFileInfo[] = [];
@@ -347,10 +347,14 @@ export async function countConfigs(cwd?: string): Promise<ConfigCounts> {
     if (fs.existsSync(autoMemBase)) {
       const encodedCwd = cwd.replace(/\//g, '-');
       try {
-        const profiles = fs.readdirSync(autoMemBase, { withFileTypes: true });
-        for (const profile of profiles) {
-          if (!profile.isDirectory()) continue;
-          const memoryFile = path.join(autoMemBase, profile.name, 'projects', encodedCwd, 'memory', 'MEMORY.md');
+        const profilesToScan = activeNonstopProfile
+          ? [activeNonstopProfile]
+          : fs.readdirSync(autoMemBase, { withFileTypes: true })
+              .filter(e => e.isDirectory())
+              .map(e => e.name);
+
+        for (const profileName of profilesToScan) {
+          const memoryFile = path.join(autoMemBase, profileName, 'projects', encodedCwd, 'memory', 'MEMORY.md');
           if (fs.existsSync(memoryFile)) {
             const tokens = getFileTokens(memoryFile);
             claudeMdFiles.push({ displayPath: '{auto-mem}/MEMORY.md', tokens });

@@ -280,7 +280,7 @@ function wrapLineToWidth(line: string, maxWidth: number): string[] {
 
   const parts = splitWrapParts(line);
   if (parts.length <= 1) {
-    return [truncateToWidth(line, maxWidth)];
+    return [line];
   }
 
   const wrapped: string[] = [];
@@ -293,12 +293,12 @@ function wrapLineToWidth(line: string, maxWidth: number): string[] {
       continue;
     }
 
-    wrapped.push(truncateToWidth(current, maxWidth));
+    wrapped.push(current);
     current = part.segment;
   }
 
   if (current) {
-    wrapped.push(truncateToWidth(current, maxWidth));
+    wrapped.push(current);
   }
 
   return wrapped;
