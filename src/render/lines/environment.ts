@@ -1,5 +1,5 @@
 import type { RenderContext } from '../../types.js';
-import { label, dim, claudeOrange, yellow, dimClaudeOrange, dimYellow } from '../colors.js';
+import { label, dim, claudeOrange, yellow, purple, dimClaudeOrange, dimYellow, dimPurple } from '../colors.js';
 
 export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -18,28 +18,32 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   const parts: string[] = [];
 
   if (ctx.claudeMdFiles.length > 0) {
-    const fileParts = ctx.claudeMdFiles.map(file => {
+    const fileParts = ctx.claudeMdFiles.filter(file => file.tokens > 0).map(file => {
       const count = file.tokens >= 1000
         ? `${(file.tokens / 1000).toFixed(1)}k`
         : `${file.tokens}`;
       return `${file.displayPath} (${count})`;
     });
-    parts.push(`Mem: ${dim(fileParts.join(', '))}`);
+    if (fileParts.length > 0) parts.push(`Mem: ${dim(fileParts.join(', '))}`);
   }
 
   if (ctx.rulesCount > 0) {
-    let rulesLabel: string;
-    if (ctx.globalRulesCount > 0 && ctx.localRulesCount > 0) {
-      rulesLabel = `${claudeOrange(String(ctx.globalRulesCount))}+${yellow(String(ctx.localRulesCount))} rules`;
-    } else if (ctx.globalRulesCount > 0) {
-      rulesLabel = `${claudeOrange(String(ctx.rulesCount))} rules`;
-    } else {
-      rulesLabel = `${yellow(String(ctx.rulesCount))} rules`;
-    }
+    const g = ctx.globalRulesCount;
+    const p = ctx.parentRulesCount;
+    const l = ctx.localRulesCount;
+    const segments: string[] = [];
+    if (g > 0) segments.push(claudeOrange(String(g)));
+    if (p > 0) segments.push(purple(String(p)));
+    if (l > 0) segments.push(yellow(String(l)));
+    const rulesLabel = segments.length > 0
+      ? `${segments.join('+')} rules`
+      : `${ctx.rulesCount} rules`;
     let rulesPart = rulesLabel;
     if (ctx.matchedRulesFiles.length > 0) {
       const fileLabels = ctx.matchedRulesFiles.map(f =>
-        f.scope === 'global' ? dimClaudeOrange(f.name) : dimYellow(f.name)
+        f.scope === 'global' ? dimClaudeOrange(f.name)
+        : f.scope === 'parent' ? dimPurple(f.name)
+        : dimYellow(f.name)
       );
       rulesPart += ` ${fileLabels.join(' ')}`;
     }

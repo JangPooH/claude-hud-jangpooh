@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-export function calcEffectiveInput(inputTokens, cacheCreationTokens, cacheReadTokens) {
+export function calcEffectiveInput(inputTokens, cacheCreationTokens, cacheReadTokens, cacheCreation5mTokens, cacheCreation1hTokens) {
+    if (cacheCreation5mTokens !== undefined && cacheCreation1hTokens !== undefined && cacheCreation5mTokens + cacheCreation1hTokens > 0) {
+        return inputTokens + cacheCreation5mTokens * 1.25 + cacheCreation1hTokens * 2.0 + cacheReadTokens * 0.1;
+    }
     return inputTokens + cacheCreationTokens * 1.25 + cacheReadTokens * 0.1;
 }
 function roundCost(v) { return v.toFixed(8); }
@@ -57,7 +60,7 @@ export function writeBaseline(transcriptPath, cumNativeCost, cumApiMs) {
             if (hasBaseline)
                 return;
         }
-        fs.writeFileSync(detailPath, JSON.stringify({ ut: 0, ct: 0, ccst: 0, cum_ncst: cumNativeCost, cum_api_ms: cumApiMs, o: 0, i: 0, cc: 0, cr: 0 }) + '\n', 'utf8');
+        fs.writeFileSync(detailPath, JSON.stringify({ ut: 0, ct: 0, ccst: 0, cum_ncst: cumNativeCost, cum_api_ms: cumApiMs, o: 0, i: 0, cc: 0, cc5m: 0, cc1h: 0, cr: 0 }) + '\n', 'utf8');
     }
     catch {
         // non-fatal
@@ -90,6 +93,10 @@ export function writeCostHistory(transcriptPath, turnCosts, userTurnCount, cumNa
             const i = deduped.reduce((s, t) => s + t.inputTokens, 0);
             const cc = deduped.reduce((s, t) => s + t.cacheCreationTokens, 0);
             const cr = deduped.reduce((s, t) => s + t.cacheReadTokens, 0);
+            const cc5mTotal = deduped.reduce((s, t) => s + (t.cacheCreation5mTokens ?? 0), 0);
+            const cc1hTotal = deduped.reduce((s, t) => s + (t.cacheCreation1hTokens ?? 0), 0);
+            const hasCacheBreakdown = deduped.some((t) => t.cacheCreation5mTokens !== undefined);
+            const cacheBreakdownFields = hasCacheBreakdown ? { cc5m: cc5mTotal, cc1h: cc1hTotal } : {};
             return JSON.stringify({
                 ...(ts != null ? { ts } : {}),
                 ut: userTurn,
@@ -97,10 +104,11 @@ export function writeCostHistory(transcriptPath, turnCosts, userTurnCount, cumNa
                 ccst: roundCost(deduped.reduce((s, t) => s + t.cost, 0)),
                 ...cumNcst,
                 ...cumApiMsField,
-                ei: roundEi(calcEffectiveInput(i, cc, cr)),
+                ei: roundEi(calcEffectiveInput(i, cc, cr, hasCacheBreakdown ? cc5mTotal : undefined, hasCacheBreakdown ? cc1hTotal : undefined)),
                 o: deduped.reduce((s, t) => s + t.outputTokens, 0),
                 i,
                 cc,
+                ...cacheBreakdownFields,
                 cr,
                 ...rateLimits,
                 ...accountFields,
@@ -161,6 +169,9 @@ export function writeCostHistory(transcriptPath, turnCosts, userTurnCount, cumNa
                 }
                 if (rctCounter <= maxWrittenRct)
                     continue; // 이미 기록됨 → skip
+                const tCacheBreakdown = t.cacheCreation5mTokens !== undefined
+                    ? { cc5m: t.cacheCreation5mTokens, cc1h: t.cacheCreation1hTokens ?? 0 }
+                    : {};
                 newLines.push(JSON.stringify({
                     ...(ts != null ? { ts } : {}),
                     ut: userTurn,
@@ -171,10 +182,11 @@ export function writeCostHistory(transcriptPath, turnCosts, userTurnCount, cumNa
                     ccst: roundCost(t.cost),
                     ...cumNcst,
                     ...cumApiMsField,
-                    ei: roundEi(calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens)),
+                    ei: roundEi(calcEffectiveInput(t.inputTokens, t.cacheCreationTokens, t.cacheReadTokens, t.cacheCreation5mTokens, t.cacheCreation1hTokens)),
                     o: t.outputTokens,
                     i: t.inputTokens,
                     cc: t.cacheCreationTokens,
+                    ...tCacheBreakdown,
                     cr: t.cacheReadTokens,
                     ...rateLimits,
                     ...accountFields,

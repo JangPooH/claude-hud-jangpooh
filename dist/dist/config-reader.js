@@ -79,7 +79,7 @@ function parsePathsFromFrontmatter(content) {
     }
     return result;
 }
-function collectRulesFilesInDir(rulesDir, scope) {
+function collectRulesFilesInDir(rulesDir, scope, baseDir) {
     if (!fs.existsSync(rulesDir))
         return [];
     const result = [];
@@ -88,7 +88,7 @@ function collectRulesFilesInDir(rulesDir, scope) {
         for (const entry of entries) {
             const fullPath = path.join(rulesDir, entry.name);
             if (entry.isDirectory()) {
-                result.push(...collectRulesFilesInDir(fullPath, scope));
+                result.push(...collectRulesFilesInDir(fullPath, scope, baseDir));
             }
             else if (entry.isFile() && entry.name.endsWith('.md')) {
                 let paths = [];
@@ -97,7 +97,7 @@ function collectRulesFilesInDir(rulesDir, scope) {
                     paths = parsePathsFromFrontmatter(content);
                 }
                 catch { /* non-fatal */ }
-                result.push({ name: entry.name, paths, scope });
+                result.push({ name: entry.name, paths, scope, baseDir });
             }
         }
     }
@@ -153,6 +153,7 @@ function addClaudeMd(files, filePath, homeDir, cwd) {
 export async function countConfigs(cwd) {
     const claudeMdFiles = [];
     const globalRulesFiles = [];
+    const parentRulesFiles = [];
     const localRulesFiles = [];
     let hooksCount = 0;
     const homeDir = os.homedir();
@@ -166,14 +167,27 @@ export async function countConfigs(cwd) {
     if (fs.existsSync(userClaudeMd)) {
         addClaudeMd(claudeMdFiles, userClaudeMd, homeDir, cwd);
     }
-    // ~/.claude/rules/*.md
-    globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global'));
-    // ~/.claude/settings.json (MCPs and hooks)
+    // ~/.claude/rules/*.md  (baseDir = homeDir, i.e. parent of ~/.claude)
+    globalRulesFiles.push(...collectRulesFilesInDir(path.join(claudeDir, 'rules'), 'global', homeDir));
+    // ~/.claude/settings.json (MCPs, hooks, thinking, effort)
     const userSettings = path.join(claudeDir, 'settings.json');
     for (const name of getMcpServerNames(userSettings)) {
         userMcpServers.add(name);
     }
     hooksCount += countHooksInFile(userSettings);
+    let thinkingBudget = null;
+    let effort = null;
+    try {
+        const settingsContent = fs.readFileSync(userSettings, 'utf8');
+        const settingsJson = JSON.parse(settingsContent);
+        if (settingsJson.thinking?.enabled === true) {
+            if (typeof settingsJson.thinking.budget_tokens === 'number')
+                thinkingBudget = settingsJson.thinking.budget_tokens;
+        }
+        if (typeof settingsJson.effort === 'string')
+            effort = settingsJson.effort;
+    }
+    catch { /* non-fatal */ }
     // {CLAUDE_CONFIG_DIR}.json (additional user-scope MCPs)
     const userClaudeJson = getClaudeConfigJsonPath(homeDir);
     for (const name of getMcpServerNames(userClaudeJson)) {
@@ -214,7 +228,7 @@ export async function countConfigs(cwd) {
         // {cwd}/.claude/rules/*.md (recursive)
         // Skip when it overlaps with user-scope rules.
         if (!projectClaudeOverlapsUserScope) {
-            localRulesFiles.push(...collectRulesFilesInDir(path.join(cwd, '.claude', 'rules'), 'local'));
+            localRulesFiles.push(...collectRulesFilesInDir(path.join(cwd, '.claude', 'rules'), 'local', cwd));
         }
         // {cwd}/.mcp.json (project MCP config) - tracked separately for disabled filtering
         const mcpJsonServers = getMcpServerNames(path.join(cwd, '.mcp.json'));
@@ -242,14 +256,66 @@ export async function countConfigs(cwd) {
         for (const name of mcpJsonServers) {
             projectMcpServers.add(name);
         }
+        // === PARENT DIRS (cwd → root, exclusive of cwd itself) ===
+        let parentDir = path.dirname(cwd);
+        const fsRoot = path.parse(parentDir).root;
+        while (parentDir !== fsRoot) {
+            const parentClaudeDir = path.join(parentDir, '.claude');
+            const defaultClaudeDir = path.join(homeDir, '.claude');
+            const overlapsUser = pathsReferToSameLocation(parentClaudeDir, claudeDir)
+                || pathsReferToSameLocation(parentClaudeDir, defaultClaudeDir);
+            // CLAUDE.md files → add to claudeMdFiles
+            const parentClaudeMd = path.join(parentDir, 'CLAUDE.md');
+            if (fs.existsSync(parentClaudeMd)) {
+                addClaudeMd(claudeMdFiles, parentClaudeMd, homeDir, cwd);
+            }
+            const parentClaudeLocalMd = path.join(parentDir, 'CLAUDE.local.md');
+            if (fs.existsSync(parentClaudeLocalMd)) {
+                addClaudeMd(claudeMdFiles, parentClaudeLocalMd, homeDir, cwd);
+            }
+            if (!overlapsUser) {
+                const parentDotClaudeMd = path.join(parentDir, '.claude', 'CLAUDE.md');
+                if (fs.existsSync(parentDotClaudeMd)) {
+                    addClaudeMd(claudeMdFiles, parentDotClaudeMd, homeDir, cwd);
+                }
+                // .claude/rules → scope: 'parent', baseDir = parentDir
+                parentRulesFiles.push(...collectRulesFilesInDir(path.join(parentDir, '.claude', 'rules'), 'parent', parentDir));
+            }
+            const next = path.dirname(parentDir);
+            if (next === parentDir)
+                break;
+            parentDir = next;
+        }
+    }
+    // === AUTO-MEMORY SCOPE ===
+    if (cwd) {
+        const autoMemBase = path.join(homeDir, '.claude-nonstop', 'profiles');
+        if (fs.existsSync(autoMemBase)) {
+            const encodedCwd = cwd.replace(/\//g, '-');
+            try {
+                const profiles = fs.readdirSync(autoMemBase, { withFileTypes: true });
+                for (const profile of profiles) {
+                    if (!profile.isDirectory())
+                        continue;
+                    const memoryFile = path.join(autoMemBase, profile.name, 'projects', encodedCwd, 'memory', 'MEMORY.md');
+                    if (fs.existsSync(memoryFile)) {
+                        const tokens = getFileTokens(memoryFile);
+                        claudeMdFiles.push({ displayPath: '{auto-mem}/MEMORY.md', tokens });
+                    }
+                }
+            }
+            catch (error) {
+                debug('Failed to read auto-memory files:', error);
+            }
+        }
     }
     // Total MCP count = user servers + project servers
     // Note: Deduplication only occurs within each scope, not across scopes.
     // A server with the same name in both user and project scope counts as 2 (separate configs).
     const mcpCount = userMcpServers.size + projectMcpServers.size;
     const plugins = getInstalledPlugins(cwd);
-    const allRulesFiles = [...globalRulesFiles, ...localRulesFiles];
-    return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins };
+    const allRulesFiles = [...globalRulesFiles, ...parentRulesFiles, ...localRulesFiles];
+    return { claudeMdCount: claudeMdFiles.length, claudeMdFiles, rulesCount: allRulesFiles.length, globalRulesCount: globalRulesFiles.length, parentRulesCount: parentRulesFiles.length, localRulesCount: localRulesFiles.length, rulesFiles: allRulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort };
 }
 function getEnabledPluginKeys(settingsPath) {
     if (!fs.existsSync(settingsPath))

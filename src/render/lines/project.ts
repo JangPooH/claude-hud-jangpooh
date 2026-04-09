@@ -1,7 +1,31 @@
 import type { RenderContext } from '../../types.js';
 import { getModelName, getProviderLabel } from '../../stdin.js';
 import { getOutputSpeed } from '../../speed-tracker.js';
-import { git as gitColor, gitBranch as gitBranchColor, label, model as modelColor, project as projectColor, red, custom as customColor } from '../colors.js';
+import { git as gitColor, gitBranch as gitBranchColor, label, dimModel, model as modelColor, project as projectColor, red, custom as customColor } from '../colors.js';
+
+function getThinkingDisplay(ctx: RenderContext): string | null {
+  // env var 우선, 없으면 settings.json 값(ctx에서 전달) 사용
+  const envBudget = parseInt(process.env.MAX_THINKING_TOKENS ?? '', 10);
+  const envEffort = process.env.CLAUDE_CODE_EFFORT_LEVEL ?? null;
+
+  const budget = !isNaN(envBudget) ? envBudget : ctx.thinkingBudget;
+  const effort = envEffort ?? ctx.effort;
+
+  if (budget === null) return null;
+
+  const K = 1024;
+  let thinkLabel: string;
+  if (budget <= 1 * K) thinkLabel = 'simple';
+  else if (budget <= 2 * K) thinkLabel = 'default';
+  else if (budget <= 4 * K) thinkLabel = 'deep';
+  else if (budget <= 8 * K) thinkLabel = 'deep+';
+  else thinkLabel = 'max';
+
+  const infoParts: string[] = [`${Math.round(budget / K)}k`];
+  if (effort) infoParts.push(effort[0].toLowerCase());
+
+  return `${thinkLabel} (${infoParts.join(',')})`;
+}
 
 export function renderProjectLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -15,7 +39,11 @@ export function renderProjectLine(ctx: RenderContext): string | null {
     const hasApiKey = !!process.env.ANTHROPIC_API_KEY;
     const modelQualifier = providerLabel ?? (showUsage && hasApiKey ? red('API') : undefined);
     const modelDisplay = modelQualifier ? `${model} | ${modelQualifier}` : model;
-    parts.push(modelColor(`[${modelDisplay}]`, colors));
+    const thinkingDisplay = getThinkingDisplay(ctx);
+    const modelPart = thinkingDisplay
+      ? `${modelColor(`[${modelDisplay}]`, model, colors)} ${dimModel(thinkingDisplay, model, colors)}`
+      : modelColor(`[${modelDisplay}]`, model, colors);
+    parts.push(modelPart);
   }
 
   let projectPart: string | null = null;

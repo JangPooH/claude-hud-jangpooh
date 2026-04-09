@@ -402,6 +402,22 @@ export function render(ctx) {
         const modelList = unknownModels.join(', ');
         lines.unshift(warning(`⚠ Unknown pricing: ${modelList} — execute claude req: claude-hud 플러그인에서 pricing.json에 ${modelList}를 추가하고, pricing.json에 있는 모든 model의 pricing table을 최신 정보로 업데이트`));
     }
+    if (ctx.transcript.thinkingBudgetExhaustedAtTurn !== null) {
+        lines.unshift(warning(`⚠ Thinking budget exhausted — 마지막 응답이 thinking token budget을 모두 소진해 실제 응답을 생성하지 못했습니다. /settings에서 thinking budget을 늘리거나 thinking을 비활성화하세요.`));
+    }
+    const cache5m = ctx.transcript.cacheCreation5mTokens;
+    const cache1h = ctx.transcript.cacheCreation1hTokens;
+    const modelId = ctx.stdin?.model?.id ?? '';
+    const isHaiku = modelId.toLowerCase().includes('haiku');
+    const isLowThinking = ctx.thinkingBudget === null || ctx.thinkingBudget < 2000;
+    const isLowEffort = ctx.effort === 'low';
+    if (cache5m > 0 && !isHaiku && !isLowThinking && !isLowEffort) {
+        const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+        const detail = cache1h > 0
+            ? `5m: ${fmt(cache5m)} / 1h: ${fmt(cache1h)}`
+            : `${fmt(cache5m)} tokens`;
+        lines.unshift(warning(`⚠ 5m cache 감지 (${detail}) — cc-cache-fix가 미적용 상태입니다`));
+    }
     const physicalLines = lines.flatMap(line => line.split('\n'));
     const visibleLines = terminalWidth
         ? physicalLines.flatMap(line => wrapLineToWidth(line, terminalWidth))

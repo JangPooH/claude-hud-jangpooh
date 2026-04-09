@@ -41,9 +41,9 @@ function globToRegex(pattern) {
     }
     return new RegExp(result + '$');
 }
-function matchesPattern(filePath, pattern, cwd, home) {
+function matchesPattern(filePath, pattern, baseDir, cwd, home) {
     const expanded = pattern.startsWith('~/') ? nodePath.join(home, pattern.slice(2)) : pattern;
-    const resolvedPattern = isAbsolute(expanded) ? expanded : nodePath.join(cwd, expanded);
+    const resolvedPattern = isAbsolute(expanded) ? expanded : nodePath.join(baseDir, expanded);
     const resolvedFile = isAbsolute(filePath) ? filePath : nodePath.join(cwd, filePath);
     try {
         return globToRegex(resolvedPattern).test(resolvedFile);
@@ -64,7 +64,7 @@ function computeMatchedRulesFiles(tools, rulesFiles, cwd, home) {
     for (const rf of rulesFiles) {
         if (!rf.paths.length)
             continue;
-        if (filePaths.some(fp => rf.paths.some(p => matchesPattern(fp, p, cwd, home)))) {
+        if (filePaths.some(fp => rf.paths.some(p => matchesPattern(fp, p, rf.baseDir, cwd, home)))) {
             matched.push({ name: rf.name, scope: rf.scope });
         }
     }
@@ -107,7 +107,7 @@ export async function main(overrides = {}) {
         catch { /* non-fatal */ }
         const transcriptPath = stdin.transcript_path ?? '';
         const transcript = await deps.parseTranscript(transcriptPath);
-        const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins } = await deps.countConfigs(stdin.cwd);
+        const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, parentRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort } = await deps.countConfigs(stdin.cwd);
         const config = await deps.loadConfig();
         const gitStatus = config.gitStatus.enabled
             ? await deps.getGitStatus(stdin.cwd)
@@ -141,12 +141,15 @@ export async function main(overrides = {}) {
             claudeMdFiles,
             rulesCount,
             globalRulesCount,
+            parentRulesCount,
             localRulesCount,
             rulesFiles,
             matchedRulesFiles,
             mcpCount,
             hooksCount,
             plugins,
+            thinkingBudget,
+            effort,
             sessionDuration,
             gitStatus,
             usageData,

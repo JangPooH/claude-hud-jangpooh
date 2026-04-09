@@ -10,9 +10,11 @@ const YELLOW = '\x1b[33m';
 const MAGENTA = '\x1b[35m';
 const CYAN = '\x1b[36m';
 const BLUE = '\x1b[34m';
+const BRIGHT_RED = '\x1b[91m';
 const BRIGHT_BLUE = '\x1b[94m';
 const BRIGHT_MAGENTA = '\x1b[95m';
 const CLAUDE_ORANGE = '\x1b[38;5;208m';
+const PURPLE = '\x1b[38;5;135m';
 
 const ANSI_BY_NAME: Record<HudColorName, string> = {
   dim: DIM,
@@ -21,8 +23,10 @@ const ANSI_BY_NAME: Record<HudColorName, string> = {
   yellow: YELLOW,
   magenta: MAGENTA,
   cyan: CYAN,
+  brightRed: BRIGHT_RED,
   brightBlue: BRIGHT_BLUE,
   brightMagenta: BRIGHT_MAGENTA,
+  claudeOrange: CLAUDE_ORANGE,
 };
 
 /** Convert a hex color string (#rrggbb) to a truecolor ANSI escape sequence. */
@@ -82,6 +86,123 @@ export function dim(text: string): string {
   return colorize(text, DIM);
 }
 
+// --- color brightening ---
+
+function color256ToRgb(n: number): [number, number, number] {
+  if (n >= 232) { const v = 8 + (n - 232) * 10; return [v, v, v]; }
+  const i = n - 16;
+  const toV = (x: number) => x === 0 ? 0 : 55 + x * 40;
+  return [toV(Math.floor(i / 36)), toV(Math.floor((i % 36) / 6)), toV(i % 6)];
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h: number;
+  switch (max) {
+    case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+    case g: h = ((b - r) / d + 2) / 6; break;
+    default: h = ((r - g) / d + 4) / 6;
+  }
+  return [h, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue2rgb = (t: number) => {
+    if (t < 0) t += 1; if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  };
+  return [Math.round(hue2rgb(h + 1/3) * 255), Math.round(hue2rgb(h) * 255), Math.round(hue2rgb(h - 1/3) * 255)];
+}
+
+const L_MIN = 0.2;
+const L_MAX = 1.0;
+const L_MID = (L_MIN + L_MAX) / 2;  // 0.55
+
+function brightRgb(r: number, g: number, b: number): string {
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const [br, bg, bb] = hslToRgb(h, s, l + (L_MAX - l) * 0.33);
+  return `\x1b[38;2;${br};${bg};${bb}m`;
+}
+
+function dimRgb(r: number, g: number, b: number): string {
+  const [h, s, l] = rgbToHsl(r, g, b);
+  const [dr, dg, db] = hslToRgb(h, s, l - (l - L_MIN) * 0.33);
+  return `\x1b[38;2;${dr};${dg};${db}m`;
+}
+
+// xterm standard RGB values for basic 8-color and bright 16-color
+const BASIC8_RGB: Record<number, [number, number, number]> = {
+  0: [0,   0,   0],    // black
+  1: [170, 0,   0],    // red
+  2: [0,   170, 0],    // green
+  3: [170, 85,  0],    // yellow
+  4: [0,   0,   170],  // blue
+  5: [170, 0,   170],  // magenta
+  6: [0,   170, 170],  // cyan
+  7: [170, 170, 170],  // white
+};
+
+const BRIGHT16_RGB: Record<number, [number, number, number]> = {
+  8:  [85,  85,  85],   // bright black
+  9:  [255, 85,  85],   // bright red
+  10: [85,  255, 85],   // bright green
+  11: [255, 255, 85],   // bright yellow
+  12: [85,  85,  255],  // bright blue
+  13: [255, 85,  255],  // bright magenta
+  14: [85,  255, 255],  // bright cyan
+  15: [255, 255, 255],  // bright white
+};
+
+/** Extract [r,g,b] from an ANSI color escape, or null if unrecognised. */
+function ansiToRgb(ansiColor: string): [number, number, number] | null {
+  const basic = ansiColor.match(/^\x1b\[3([0-7])m$/);
+  if (basic) return BASIC8_RGB[+basic[1]] ?? null;
+
+  const bright16 = ansiColor.match(/^\x1b\[9([0-7])m$/);
+  if (bright16) return BRIGHT16_RGB[8 + +bright16[1]] ?? null;
+
+  const c256 = ansiColor.match(/^\x1b\[38;5;(\d+)m$/);
+  if (c256) {
+    const n = +c256[1];
+    if (n < 16) return null;
+    return color256ToRgb(n);
+  }
+
+  const tc = ansiColor.match(/^\x1b\[38;2;(\d+);(\d+);(\d+)m$/);
+  if (tc) return [+tc[1], +tc[2], +tc[3]];
+
+  return null;
+}
+
+/** Returns a brighter version of the given ANSI color code via HSL L +33%. */
+export function bright(ansiColor: string): string {
+  const rgb = ansiToRgb(ansiColor);
+  if (!rgb) return ansiColor;
+  return brightRgb(...rgb);
+}
+
+/**
+ * Returns dimRgb(color) if HSL L >= 0.5, otherwise brightRgb(color).
+ * Ensures the time marker always visually contrasts with surrounding filled bars.
+ */
+export function dimOrBright(ansiColor: string): string {
+  const rgb = ansiToRgb(ansiColor);
+  if (!rgb) return ansiColor;
+  const [, , l] = rgbToHsl(...rgb);
+  return l >= L_MID ? dimRgb(...rgb) : brightRgb(...rgb);
+}
+
 export function brightBlue(text: string): string {
   return colorize(text, BRIGHT_BLUE);
 }
@@ -98,6 +219,14 @@ export function dimClaudeOrange(text: string): string {
   return `${DIM}${CLAUDE_ORANGE}${text}${RESET}`;
 }
 
+export function purple(text: string): string {
+  return colorize(text, PURPLE);
+}
+
+export function dimPurple(text: string): string {
+  return `${DIM}${PURPLE}${text}${RESET}`;
+}
+
 export function dimYellow(text: string): string {
   return `${DIM}${YELLOW}${text}${RESET}`;
 }
@@ -106,8 +235,19 @@ export function claudeOrange(text: string): string {
   return colorize(text, CLAUDE_ORANGE);
 }
 
-export function model(text: string, colors?: Partial<HudColorOverrides>): string {
-  return withOverride(text, colors?.model, CYAN);
+function getModelFamilyColor(modelName: string): string {
+  const lower = modelName.toLowerCase();
+  if (lower.includes('haiku')) return GREEN;
+  if (lower.includes('opus')) return CLAUDE_ORANGE;
+  return CYAN;
+}
+
+export function model(text: string, modelName?: string, colors?: Partial<HudColorOverrides>): string {
+  return withOverride(text, colors?.model, getModelFamilyColor(modelName ?? ''));
+}
+
+export function dimModel(text: string, modelName?: string, colors?: Partial<HudColorOverrides>): string {
+  return `${DIM}${resolveAnsi(colors?.model, getModelFamilyColor(modelName ?? ''))}${text}${RESET}`;
 }
 
 export function project(text: string, colors?: Partial<HudColorOverrides>): string {
@@ -146,7 +286,7 @@ export function getContextColor(percent: number, colors?: Partial<HudColorOverri
 
 export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string {
   if (percent >= 90) return resolveAnsi(colors?.critical, RED);
-  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[38;5;208m');
+  if (percent >= 75) return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
   return resolveAnsi(colors?.usage, BLUE);
 }
 
@@ -174,10 +314,7 @@ export function quotaBar(percent: number, width: number = 10, colors?: Partial<H
 }
 
 function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>): string {
-  // Use a visually adjacent/contrasting color derived from the quota color at this usage level
-  if (percent >= 90) return resolveAnsi(colors?.critical, '\x1b[91m');  // bright red (quota: red)
-  if (percent >= 75) return resolveAnsi(colors?.usageWarning, '\x1b[38;5;214m'); // bright orange (quota: orange)
-  return resolveAnsi(colors?.usage, CYAN);                                   // cyan (quota: blue)
+  return dimOrBright(getQuotaColor(percent, colors));
 }
 
 export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {

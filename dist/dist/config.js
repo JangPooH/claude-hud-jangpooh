@@ -54,13 +54,12 @@ export const DEFAULT_CONFIG = {
         context: 'green',
         usage: 'brightBlue',
         warning: 'yellow',
-        usageWarning: 'brightMagenta',
-        critical: 'red',
-        model: 'cyan',
+        usageWarning: 'claudeOrange',
+        critical: 'brightRed',
         project: 'yellow',
         git: 'magenta',
         gitBranch: 'cyan',
-        custom: 208,
+        custom: 'claudeOrange',
     },
 };
 export function getConfigPath() {
@@ -87,7 +86,9 @@ function validateColorName(value) {
         || value === 'magenta'
         || value === 'cyan'
         || value === 'brightBlue'
-        || value === 'brightMagenta';
+        || value === 'brightMagenta'
+        || value === 'brightRed'
+        || value === 'claudeOrange';
 }
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 function validateColorValue(value) {
@@ -257,7 +258,7 @@ export function mergeConfig(userConfig) {
             : DEFAULT_CONFIG.colors.critical,
         model: validateColorValue(migrated.colors?.model)
             ? migrated.colors.model
-            : DEFAULT_CONFIG.colors.model,
+            : undefined,
         project: validateColorValue(migrated.colors?.project)
             ? migrated.colors.project
             : DEFAULT_CONFIG.colors.project,

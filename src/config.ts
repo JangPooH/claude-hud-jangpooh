@@ -16,7 +16,9 @@ export type HudColorName =
   | 'magenta'
   | 'cyan'
   | 'brightBlue'
-  | 'brightMagenta';
+  | 'brightMagenta'
+  | 'brightRed'
+  | 'claudeOrange';
 
 /** A color value: named preset, 256-color index (0-255), or hex string (#rrggbb). */
 export type HudColorValue = HudColorName | number | string;
@@ -27,7 +29,7 @@ export interface HudColorOverrides {
   warning: HudColorValue;
   usageWarning: HudColorValue;
   critical: HudColorValue;
-  model: HudColorValue;
+  model?: HudColorValue;
   project: HudColorValue;
   git: HudColorValue;
   gitBranch: HudColorValue;
@@ -127,14 +129,13 @@ export const DEFAULT_CONFIG: HudConfig = {
     context: 'green',
     usage: 'brightBlue',
     warning: 'yellow',
-    usageWarning: 'brightMagenta',
-    critical: 'red',
-    model: 'cyan',
+    usageWarning: 'claudeOrange',
+    critical: 'brightRed',
     project: 'yellow',
     git: 'magenta',
     gitBranch: 'cyan',
 
-    custom: 208,
+    custom: 'claudeOrange',
   },
 };
 
@@ -167,7 +168,9 @@ function validateColorName(value: unknown): value is HudColorName {
     || value === 'magenta'
     || value === 'cyan'
     || value === 'brightBlue'
-    || value === 'brightMagenta';
+    || value === 'brightMagenta'
+    || value === 'brightRed'
+    || value === 'claudeOrange';
 }
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
@@ -352,7 +355,7 @@ export function mergeConfig(userConfig: Partial<HudConfig>): HudConfig {
       : DEFAULT_CONFIG.colors.critical,
     model: validateColorValue(migrated.colors?.model)
       ? migrated.colors.model
-      : DEFAULT_CONFIG.colors.model,
+      : undefined,
     project: validateColorValue(migrated.colors?.project)
       ? migrated.colors.project
       : DEFAULT_CONFIG.colors.project,

@@ -5,7 +5,8 @@ import { dirname, join } from 'node:path';
 export interface ModelPricing {
   inputPerMTok: number;
   outputPerMTok: number;
-  cacheWritePerMTok: number;
+  cacheWritePerMTok: number;     // 5m cache write (1.25x input)
+  cacheWrite1hPerMTok?: number;  // 1h cache write (2x input)
   cacheReadPerMTok: number;
 }
 

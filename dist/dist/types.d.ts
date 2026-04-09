@@ -83,6 +83,8 @@ export interface TurnCost {
     inputTokens: number;
     outputTokens: number;
     cacheCreationTokens: number;
+    cacheCreation5mTokens?: number;
+    cacheCreation1hTokens?: number;
     cacheReadTokens: number;
     cost: number;
     userTurn?: number;
@@ -99,6 +101,9 @@ export interface TranscriptData {
     sessionCost: number;
     userTurnCount: number;
     unknownPricingModels: string[];
+    thinkingBudgetExhaustedAtTurn: number | null;
+    cacheCreation5mTokens: number;
+    cacheCreation1hTokens: number;
 }
 export interface RenderContext {
     stdin: StdinData;
@@ -107,15 +112,18 @@ export interface RenderContext {
     claudeMdFiles: ClaudeMdFile[];
     rulesCount: number;
     globalRulesCount: number;
+    parentRulesCount: number;
     localRulesCount: number;
     rulesFiles: RulesFileInfo[];
     matchedRulesFiles: {
         name: string;
-        scope: 'global' | 'local';
+        scope: 'global' | 'parent' | 'local';
     }[];
     mcpCount: number;
     hooksCount: number;
     plugins: PluginInfo[];
+    thinkingBudget: number | null;
+    effort: string | null;
     sessionDuration: string;
     gitStatus: GitStatus | null;
     usageData: UsageData | null;

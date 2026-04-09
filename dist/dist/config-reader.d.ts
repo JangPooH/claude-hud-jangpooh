@@ -9,18 +9,22 @@ export interface PluginInfo {
 export interface RulesFileInfo {
     name: string;
     paths: string[];
-    scope: 'global' | 'local';
+    scope: 'global' | 'parent' | 'local';
+    baseDir: string;
 }
 export interface ConfigCounts {
     claudeMdCount: number;
     claudeMdFiles: ClaudeMdFile[];
     rulesCount: number;
     globalRulesCount: number;
+    parentRulesCount: number;
     localRulesCount: number;
     rulesFiles: RulesFileInfo[];
     mcpCount: number;
     hooksCount: number;
     plugins: PluginInfo[];
+    thinkingBudget: number | null;
+    effort: string | null;
 }
 export declare function countConfigs(cwd?: string): Promise<ConfigCounts>;
 //# sourceMappingURL=config-reader.d.ts.map

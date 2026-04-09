@@ -41,9 +41,9 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(result + '$');
 }
 
-function matchesPattern(filePath: string, pattern: string, cwd: string, home: string): boolean {
+function matchesPattern(filePath: string, pattern: string, baseDir: string, cwd: string, home: string): boolean {
   const expanded = pattern.startsWith('~/') ? nodePath.join(home, pattern.slice(2)) : pattern;
-  const resolvedPattern = isAbsolute(expanded) ? expanded : nodePath.join(cwd, expanded);
+  const resolvedPattern = isAbsolute(expanded) ? expanded : nodePath.join(baseDir, expanded);
   const resolvedFile = isAbsolute(filePath) ? filePath : nodePath.join(cwd, filePath);
   try {
     return globToRegex(resolvedPattern).test(resolvedFile);
@@ -52,16 +52,16 @@ function matchesPattern(filePath: string, pattern: string, cwd: string, home: st
   }
 }
 
-function computeMatchedRulesFiles(tools: ToolEntry[], rulesFiles: RulesFileInfo[], cwd: string, home: string): { name: string; scope: 'global' | 'local' }[] {
+function computeMatchedRulesFiles(tools: ToolEntry[], rulesFiles: RulesFileInfo[], cwd: string, home: string): { name: string; scope: 'global' | 'parent' | 'local' }[] {
   if (!cwd || !rulesFiles.length) return [];
   const filePaths = tools
     .filter(t => (t.name === 'Read' || t.name === 'Write' || t.name === 'Edit') && t.target)
     .map(t => t.target!);
   if (!filePaths.length) return [];
-  const matched: { name: string; scope: 'global' | 'local' }[] = [];
+  const matched: { name: string; scope: 'global' | 'parent' | 'local' }[] = [];
   for (const rf of rulesFiles) {
     if (!rf.paths.length) continue;
-    if (filePaths.some(fp => rf.paths.some(p => matchesPattern(fp, p, cwd, home)))) {
+    if (filePaths.some(fp => rf.paths.some(p => matchesPattern(fp, p, rf.baseDir, cwd, home)))) {
       matched.push({ name: rf.name, scope: rf.scope });
     }
   }
@@ -126,7 +126,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
 const transcriptPath = stdin.transcript_path ?? '';
     const transcript = await deps.parseTranscript(transcriptPath);
 
-    const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins } = await deps.countConfigs(stdin.cwd);
+    const { claudeMdCount, claudeMdFiles, rulesCount, globalRulesCount, parentRulesCount, localRulesCount, rulesFiles, mcpCount, hooksCount, plugins, thinkingBudget, effort } = await deps.countConfigs(stdin.cwd);
 
     const config = await deps.loadConfig();
     const gitStatus = config.gitStatus.enabled
@@ -184,12 +184,15 @@ const transcriptPath = stdin.transcript_path ?? '';
       claudeMdFiles,
       rulesCount,
       globalRulesCount,
+      parentRulesCount,
       localRulesCount,
       rulesFiles,
       matchedRulesFiles,
       mcpCount,
       hooksCount,
       plugins,
+      thinkingBudget,
+      effort,
       sessionDuration,
       gitStatus,
       usageData,

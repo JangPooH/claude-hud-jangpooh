@@ -93,7 +93,9 @@ export interface TurnCost {
   messageId?: string;
   inputTokens: number;
   outputTokens: number;
-  cacheCreationTokens: number;
+  cacheCreationTokens: number;      // total (5m + 1h)
+  cacheCreation5mTokens?: number;   // 5-minute cache write breakdown
+  cacheCreation1hTokens?: number;   // 1-hour cache write breakdown
   cacheReadTokens: number;
   cost: number;
   userTurn?: number;
@@ -111,6 +113,9 @@ export interface TranscriptData {
   sessionCost: number;
   userTurnCount: number;
   unknownPricingModels: string[];
+  thinkingBudgetExhaustedAtTurn: number | null;
+  cacheCreation5mTokens: number;
+  cacheCreation1hTokens: number;
 }
 
 export interface RenderContext {
@@ -120,12 +125,15 @@ export interface RenderContext {
   claudeMdFiles: ClaudeMdFile[];
   rulesCount: number;
   globalRulesCount: number;
+  parentRulesCount: number;
   localRulesCount: number;
   rulesFiles: RulesFileInfo[];
-  matchedRulesFiles: { name: string; scope: 'global' | 'local' }[];
+  matchedRulesFiles: { name: string; scope: 'global' | 'parent' | 'local' }[];
   mcpCount: number;
   hooksCount: number;
   plugins: PluginInfo[];
+  thinkingBudget: number | null;
+  effort: string | null;
   sessionDuration: string;
   gitStatus: GitStatus | null;
   usageData: UsageData | null;

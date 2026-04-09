@@ -1,5 +1,5 @@
 import type { TurnCost } from './types.js';
-export declare function calcEffectiveInput(inputTokens: number, cacheCreationTokens: number, cacheReadTokens: number): number;
+export declare function calcEffectiveInput(inputTokens: number, cacheCreationTokens: number, cacheReadTokens: number, cacheCreation5mTokens?: number, cacheCreation1hTokens?: number): number;
 export declare function getCostHistoryPath(transcriptPath: string): string;
 export declare function getCostHistoryDetailPath(transcriptPath: string): string;
 /** mid 기준 마지막 occurrence만 남김 (mid 없는 항목은 모두 유지) */
