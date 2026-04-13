@@ -58,4 +58,4 @@ temp/
 yarn.lock
 bun.lock
 
-.session_logs/
+.session-logs/
