@@ -9,8 +9,10 @@ import { parseExtraCmdArg, runExtraCmd } from './extra-cmd.js';
 import { getClaudeCodeVersion } from './version.js';
 import { getMemoryUsage } from './memory.js';
 import { getNonstopInfo } from './nonstop.js';
+import { getExtraUsage } from './extra-usage.js';
 import { writeCostHistory, writeBaseline } from './cost-history.js';
 import type { RenderContext, ToolEntry } from './types.js';
+import { isLimitReached } from './types.js';
 import { fileURLToPath } from 'node:url';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
@@ -80,6 +82,7 @@ export type MainDeps = {
   getClaudeCodeVersion: typeof getClaudeCodeVersion;
   getMemoryUsage: typeof getMemoryUsage;
   getNonstopInfo: typeof getNonstopInfo;
+  getExtraUsage: typeof getExtraUsage;
   render: typeof render;
   now: () => number;
   log: (...args: unknown[]) => void;
@@ -98,6 +101,7 @@ export async function main(overrides: Partial<MainDeps> = {}): Promise<void> {
     getClaudeCodeVersion,
     getMemoryUsage,
     getNonstopInfo,
+    getExtraUsage,
     render,
     now: () => Date.now(),
     log: console.log,
@@ -139,6 +143,15 @@ const transcriptPath = stdin.transcript_path ?? '';
     let usageData: RenderContext['usageData'] = null;
     if (config.display.showUsage !== false) {
       usageData = deps.getUsageFromStdin(stdin);
+
+      // Fetch extra credit info if limit is reached (and max account)
+      if (usageData && isLimitReached(usageData) && nonstopInfo?.currentAccountConfigDir) {
+        const extraCredit = await deps.getExtraUsage(
+          nonstopInfo.currentAccountConfigDir,
+          true,
+        );
+        usageData.extraCredit = extraCredit;
+      }
     }
 
     const extraCmd = deps.parseExtraCmdArg();

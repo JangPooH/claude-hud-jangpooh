@@ -1,4 +1,5 @@
 import type { RenderContext } from '../types.js';
+import type { ExtraUsageData } from '../extra-usage.js';
 import { label, getQuotaColor, quotaBar, quotaBarWithTime, RESET } from './colors.js';
 
 export function formatTokens(n: number): string {
@@ -73,4 +74,37 @@ export function formatUsageWindowPart({
   return reset
     ? `${windowLabel}: ${usageDisplay} ${dimColor}(${reset})${RESET}`
     : `${windowLabel}: ${usageDisplay}`;
+}
+
+export function formatExtraUsageBar(
+  extraUsage: ExtraUsageData | null,
+  colors?: RenderContext['config']['colors'],
+  barWidth: number = 15,
+): string {
+  // Extra credit disabled
+  if (!extraUsage || !extraUsage.is_enabled) {
+    const dimColor = '\x1b[2m'; // dim
+    return `${label('Extra', colors)} ${dimColor}(disabled)${RESET}`;
+  }
+
+  // Extra credit enabled with monthly reset timemarker
+  const percent = extraUsage.utilization;
+
+  // Calculate days remaining in month for time marker
+  const now = new Date();
+  const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const daysInMonth = lastDayOfMonth.getDate();
+  const currentDay = now.getDate();
+  const daysElapsed = currentDay - 1;
+  const timePercent = Math.min(100, (daysElapsed / daysInMonth) * 100);
+
+  const bar = quotaBarWithTime(percent, timePercent, barWidth, colors);
+  const percentDisplay = `${percent.toFixed(2)}%`;
+
+  // Format dollar amounts (API returns cents)
+  const usedDollars = (extraUsage.used_credits / 100).toFixed(2);
+  const limitDollars = (extraUsage.monthly_limit / 100).toFixed(2);
+  const moneyDisplay = `($${usedDollars}/$${limitDollars})`;
+
+  return `${label('Extra', colors)} ${bar} ${percentDisplay} ${moneyDisplay}`;
 }

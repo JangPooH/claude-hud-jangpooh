@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 export interface NonstopInfo {
   currentAccount: string | null;
   currentAccountType: string | null;
+  currentAccountConfigDir: string | null;
   otherCount: number;
 }
 
@@ -73,5 +74,10 @@ export async function getNonstopInfo(transcriptPath?: string): Promise<NonstopIn
   const currentAccountType = current ? await readAccountType(current.configDir) : null;
   const otherCount = accounts.length - 1;
 
-  return { currentAccount: current?.name ?? null, currentAccountType, otherCount };
+  return {
+    currentAccount: current?.name ?? null,
+    currentAccountType,
+    currentAccountConfigDir: current?.configDir ?? null,
+    otherCount,
+  };
 }

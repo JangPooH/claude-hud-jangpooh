@@ -3,7 +3,7 @@ import { isLimitReached } from '../../types.js';
 import { getProviderLabel } from '../../stdin.js';
 import { critical, label, custom } from '../colors.js';
 import { getAdaptiveBarWidth } from '../../utils/terminal.js';
-import { formatResetTime, formatUsagePercent, formatUsageWindowPart } from '../format-utils.js';
+import { formatResetTime, formatUsagePercent, formatUsageWindowPart, formatExtraUsageBar } from '../format-utils.js';
 
 export function renderUsageLine(ctx: RenderContext): string | null {
   const display = ctx.config?.display;
@@ -25,10 +25,24 @@ export function renderUsageLine(ctx: RenderContext): string | null {
   const usageLabel = label('Usage', colors);
 
   if (isLimitReached(ctx.usageData)) {
-    const resetTime = ctx.usageData.fiveHour === 100
+    // Determine which limit(s) reached
+    const reached5h = ctx.usageData.fiveHour === 100;
+    const reached7d = ctx.usageData.sevenDay === 100;
+    const limitType = reached5h && reached7d ? '5h+7d' : (reached5h ? '5h' : '7d');
+
+    const resetTime = reached5h
       ? formatResetTime(ctx.usageData.fiveHourResetAt)
       : formatResetTime(ctx.usageData.sevenDayResetAt);
-    return `${accountPrefix}${usageLabel} ${critical(`⚠ Limit reached${resetTime ? ` (resets ${resetTime})` : ''}`, colors)}`;
+
+    const warningMsg = `⚠ Limit reached (${limitType}${resetTime ? `, resets ${resetTime}` : ''})`;
+
+    // Show extra credit bar in nonstop environment
+    if (ctx.nonstopInfo) {
+      const extraBar = formatExtraUsageBar(ctx.usageData.extraCredit || null, colors, 15);
+      return `${accountPrefix}${usageLabel} ${critical(warningMsg, colors)} | ${extraBar}`;
+    }
+
+    return `${accountPrefix}${usageLabel} ${critical(warningMsg, colors)}`;
   }
 
   const threshold = display?.usageThreshold ?? 0;

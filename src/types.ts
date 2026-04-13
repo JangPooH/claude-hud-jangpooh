@@ -2,6 +2,7 @@ import type { HudConfig } from './config.js';
 import type { GitStatus } from './git.js';
 import type { NonstopInfo } from './nonstop.js';
 import type { ClaudeMdFile, PluginInfo, RulesFileInfo } from './config-reader.js';
+import type { ExtraUsageData } from './extra-usage.js';
 
 export interface StdinData {
   session_id?: string;
@@ -74,6 +75,7 @@ export interface UsageData {
   sevenDay: number | null;  // 0-100 percentage, null if unavailable
   fiveHourResetAt: Date | null;
   sevenDayResetAt: Date | null;
+  extraCredit?: ExtraUsageData | null;  // Extra credit info when limit reached
 }
 
 export interface MemoryInfo {
