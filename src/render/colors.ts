@@ -284,7 +284,12 @@ export function getContextColor(percent: number, colors?: Partial<HudColorOverri
   return resolveAnsi(colors?.context, GREEN);
 }
 
-export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>): string {
+export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
+  if (colorMode === 'critical') return resolveAnsi(colors?.critical, RED);
+  if (colorMode === 'warning') return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
+  if (colorMode === 'normal') return resolveAnsi(colors?.usage, BLUE);
+
+  // Default behavior when colorMode is null or undefined
   if (percent >= 90) return resolveAnsi(colors?.critical, RED);
   if (percent >= 75) return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
   return resolveAnsi(colors?.usage, BLUE);
@@ -306,18 +311,18 @@ function buildBar(percent: number, width: number): string {
   return '█'.repeat(full) + PARTIAL_CHARS[partialIdx] + DIM + '░'.repeat(width - full - 1);
 }
 
-export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
+export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const color = getQuotaColor(safePercent, colors);
+  const color = getQuotaColor(safePercent, colors, colorMode);
   return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }
 
-function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>): string {
-  return dimOrBright(getQuotaColor(percent, colors));
+function getTimeMarkerColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
+  return dimOrBright(getQuotaColor(percent, colors, colorMode));
 }
 
-export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
+export function quotaBarWithTime(percent: number, timePercent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
   const safeTime = Number.isFinite(timePercent) ? Math.min(100, Math.max(0, timePercent)) : 0;
@@ -325,8 +330,8 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
   const usageBlocks = Math.floor((safePercent / 100) * safeWidth);
   // timePos < 0 means no marker (window already expired)
   const timePos = safeTime < 100 ? Math.min(safeWidth - 1, Math.floor((safeTime / 100) * safeWidth)) : -1;
-  const color = getQuotaColor(safePercent, colors);
-  const markerColor = getTimeMarkerColor(safePercent, colors);
+  const color = getQuotaColor(safePercent, colors, colorMode);
+  const markerColor = getTimeMarkerColor(safePercent, colors, colorMode);
 
   let result = '';
   for (let i = 0; i < safeWidth; i++) {

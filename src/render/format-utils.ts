@@ -98,7 +98,7 @@ export function formatExtraUsageBar(
   const daysElapsed = currentDay - 1;
   const timePercent = Math.min(100, (daysElapsed / daysInMonth) * 100);
 
-  const bar = quotaBarWithTime(percent, timePercent, barWidth, colors);
+  const bar = quotaBarWithTime(percent, timePercent, barWidth, colors, 'warning');
   const percentDisplay = `${percent.toFixed(2)}%`;
 
   // Format dollar amounts (API returns cents)

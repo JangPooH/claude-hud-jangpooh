@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { userInfo } from 'node:os';
+import { readCache, readLastApiCallTimestamp, updateApiCallTimestamp, writeCache, shouldRefreshCache } from './cache.js';
 
 export interface ExtraUsageData {
   is_enabled: boolean;
@@ -10,12 +11,6 @@ export interface ExtraUsageData {
   utilization: number;
 }
 
-interface ExtraUsageCache {
-  extra_usage: ExtraUsageData;
-  cachedAt: number;
-}
-
-const CACHE_TTL_MS = 10_000; // 10 seconds
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
@@ -55,10 +50,16 @@ function readTokenFromKeychain(configDir: string): string | null {
   }
 }
 
+interface FetchResult {
+  data: ExtraUsageData | null;
+  isRateLimited: boolean;
+}
+
 /**
  * Fetch extra_usage data from Anthropic OAuth API.
+ * Returns { data, isRateLimited } to distinguish 429 errors from other failures.
  */
-async function fetchExtraUsageFromAPI(token: string): Promise<ExtraUsageData | null> {
+async function fetchExtraUsageFromAPI(token: string): Promise<FetchResult> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -75,8 +76,12 @@ async function fetchExtraUsageFromAPI(token: string): Promise<ExtraUsageData | n
 
     clearTimeout(timeoutId);
 
+    if (res.status === 429) {
+      return { data: null, isRateLimited: true };
+    }
+
     if (!res.ok) {
-      return null;
+      return { data: null, isRateLimited: false };
     }
 
     const data = await res.json() as {
@@ -90,61 +95,33 @@ async function fetchExtraUsageFromAPI(token: string): Promise<ExtraUsageData | n
 
     const extraUsage = data?.extra_usage;
     if (!extraUsage || typeof extraUsage.is_enabled !== 'boolean') {
-      return null;
+      return { data: null, isRateLimited: false };
     }
 
     return {
-      is_enabled: extraUsage.is_enabled,
-      monthly_limit: extraUsage.monthly_limit ?? 0,
-      used_credits: extraUsage.used_credits ?? 0,
-      utilization: extraUsage.utilization ?? 0,
+      data: {
+        is_enabled: extraUsage.is_enabled,
+        monthly_limit: extraUsage.monthly_limit ?? 0,
+        used_credits: extraUsage.used_credits ?? 0,
+        utilization: extraUsage.utilization ?? 0,
+      },
+      isRateLimited: false,
     };
   } catch {
-    return null;
+    return { data: null, isRateLimited: false };
   }
 }
 
-/**
- * Read cache file from configDir/extra-usage-cache.json
- */
-function readCache(configDir: string): ExtraUsageCache | null {
-  try {
-    const cacheFile = join(configDir, 'extra-usage-cache.json');
-    if (!existsSync(cacheFile)) {
-      return null;
-    }
-
-    const raw = readFileSync(cacheFile, 'utf-8');
-    const data = JSON.parse(raw) as ExtraUsageCache;
-    return data;
-  } catch {
-    return null;
-  }
-}
 
 /**
- * Write cache file to configDir/extra-usage-cache.json
- */
-function writeCache(configDir: string, data: ExtraUsageCache): void {
-  try {
-    const cacheFile = join(configDir, 'extra-usage-cache.json');
-    writeFileSync(cacheFile, JSON.stringify(data), 'utf-8');
-  } catch {
-    // Non-fatal: cache write failure doesn't block rendering
-  }
-}
-
-/**
- * Get extra usage data with caching.
+ * Get extra usage data with caching (shared with claude-nonstop).
  *
- * Only fetches from API if:
- * 1. isLimitReached is true (to avoid unnecessary API calls)
- * 2. Cache is missing or expired (TTL 10 seconds)
- *
- * Returns null if:
- * - isLimitReached is false
- * - Token cannot be read
- * - API call fails
+ * Cache strategy:
+ * - Two timestamp files: cachedTimestamp (response received) and lastApiCallTimestamp (request sent)
+ * - Only fetches if max(cachedTimestamp, lastApiCallTimestamp) + 1min < now
+ * - Updates lastApiCallTimestamp immediately before API call (guards against concurrent calls)
+ * - On success, updates both cache file and cachedTimestamp
+ * - Returns cached data (even if stale) to avoid blocking on failed API calls
  */
 export async function getExtraUsage(
   configDir: string | null,
@@ -155,31 +132,47 @@ export async function getExtraUsage(
     return null;
   }
 
-  // Check cache first
+  const now = Date.now();
+
+  // Check cache and last API call timestamp
   const cache = readCache(configDir);
-  if (cache) {
-    const age = Date.now() - cache.cachedAt;
-    if (age < CACHE_TTL_MS) {
-      return cache.extra_usage;
+  const lastApiCallTs = readLastApiCallTimestamp(configDir);
+
+  // Decide if we should refresh
+  if (!shouldRefreshCache(cache, lastApiCallTs, now)) {
+    // Cache is fresh enough, return cached data
+    if (cache?.raw?.extra_usage) {
+      return cache.raw.extra_usage;
     }
+    return null;
   }
 
-  // Cache miss or expired — fetch from API
+  // Get token
   const token = readTokenFromKeychain(configDir);
   if (!token) {
+    // Return cached data if available
+    if (cache?.raw?.extra_usage) {
+      return cache.raw.extra_usage;
+    }
     return null;
   }
 
-  const extraUsage = await fetchExtraUsageFromAPI(token);
-  if (!extraUsage) {
-    return null;
+  // Update API call timestamp immediately (before awaiting response)
+  updateApiCallTimestamp(configDir, now);
+
+  // Fetch from API
+  const result = await fetchExtraUsageFromAPI(token);
+
+  if (result.data) {
+    // Success — cache the full API response with timestamp
+    writeCache(configDir, { extra_usage: result.data }, now);
+    return result.data;
   }
 
-  // Cache the result
-  writeCache(configDir, {
-    extra_usage: extraUsage,
-    cachedAt: Date.now(),
-  });
+  // API call failed — return cached data if available
+  if (cache?.raw?.extra_usage) {
+    return cache.raw.extra_usage;
+  }
 
-  return extraUsage;
+  return null;
 }
