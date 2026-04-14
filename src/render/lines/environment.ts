@@ -93,7 +93,10 @@ export function renderEnvironmentLine(ctx: RenderContext): string | null {
   }
 
   if (ctx.plugins.length > 0) {
-    const list = ctx.plugins.map(p => `${p.name}(${p.scopes.join(', ')})`).join(', ');
+    const list = ctx.plugins.map(p => {
+      const scopeAbbr = p.scopes.map(s => s === 'global' ? 'g' : 'l').join(',');
+      return `${p.name}(${scopeAbbr})`;
+    }).join(', ');
     parts.push(`Plugins: ${dim(list)}`);
   }
 
