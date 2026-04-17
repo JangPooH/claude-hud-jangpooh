@@ -1,6 +1,7 @@
 import type { HudElement } from '../config.js';
 import { DEFAULT_ELEMENT_ORDER } from '../config.js';
 import type { RenderContext } from '../types.js';
+import { isLimitReached } from '../types.js';
 import { renderSessionLine } from './session-line.js';
 import { renderToolsLine } from './tools-line.js';
 import { renderTurnCounterLine } from './turn-counter-line.js';
@@ -494,6 +495,17 @@ export function render(ctx: RenderContext): void {
 
   if (ctx.transcript.thinkingBudgetExhaustedAtTurn !== null) {
     lines.unshift(warning(`⚠ Thinking budget exhausted — 마지막 응답이 thinking token budget을 모두 소진해 실제 응답을 생성하지 못했습니다. /settings에서 thinking budget을 늘리거나 thinking을 비활성화하세요.`));
+  }
+
+  if (ctx.usageData && isLimitReached(ctx.usageData)) {
+    const reached5h = ctx.usageData.fiveHour === 100;
+    const reached7d = ctx.usageData.sevenDay === 100;
+    const limitType = reached5h && reached7d ? '5h+7d' : (reached5h ? '5h' : '7d');
+    if (ctx.usageData.extraCredit) {
+      lines.unshift(warning(`⚠ Limit reached (${limitType}) — extra credit 소모 중`));
+    } else {
+      lines.unshift(warning(`⚠ Limit reached (${limitType})`));
+    }
   }
 
   const cache5m = ctx.transcript.cacheCreation5mTokens;
