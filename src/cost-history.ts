@@ -103,6 +103,22 @@ export function writeCostHistory(
 
   // cost_history: per user turn aggregate, rewrite each time
   try {
+    // 기존 파일에서 ut별 acct를 읽어둠 (계정이 바뀌어도 과거 턴의 acct 보존)
+    const existingAcct = new Map<number, string>();
+    const existingAcctType = new Map<number, string>();
+    try {
+      const existing = fs.readFileSync(getCostHistoryPath(transcriptPath), 'utf8');
+      for (const line of existing.split('\n')) {
+        if (!line.trim()) continue;
+        try {
+          const e = JSON.parse(line) as Record<string, unknown>;
+          const ut = e['ut'];
+          if (typeof ut === 'number' && typeof e['acct'] === 'string') existingAcct.set(ut, e['acct'] as string);
+          if (typeof ut === 'number' && typeof e['acct_t'] === 'string') existingAcctType.set(ut, e['acct_t'] as string);
+        } catch { /* skip malformed */ }
+      }
+    } catch { /* file doesn't exist yet */ }
+
     const turnLines = sortedEntries.map(([userTurn, costs]) => {
       const deduped = dedupTurnCosts(costs);
       const i = deduped.reduce((s, t) => s + t.inputTokens, 0);
@@ -112,6 +128,9 @@ export function writeCostHistory(
       const cc1hTotal = deduped.reduce((s, t) => s + (t.cacheCreation1hTokens ?? 0), 0);
       const hasCacheBreakdown = deduped.some((t) => t.cacheCreation5mTokens !== undefined);
       const cacheBreakdownFields = hasCacheBreakdown ? { cc5m: cc5mTotal, cc1h: cc1hTotal } : {};
+      const acctForTurn = existingAcct.has(userTurn)
+        ? { acct: existingAcct.get(userTurn), ...(existingAcctType.has(userTurn) ? { acct_t: existingAcctType.get(userTurn) } : {}) }
+        : accountFields;
       return JSON.stringify({
         ...(ts != null ? { ts } : {}),
         ut: userTurn,
@@ -126,7 +145,7 @@ export function writeCostHistory(
         ...cacheBreakdownFields,
         cr,
         ...rateLimits,
-        ...accountFields,
+        ...acctForTurn,
       });
     });
     fs.writeFileSync(getCostHistoryPath(transcriptPath), turnLines.join('\n') + '\n', 'utf8');
