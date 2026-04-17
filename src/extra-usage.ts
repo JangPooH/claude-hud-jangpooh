@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { userInfo } from 'node:os';
+import { createHash } from 'node:crypto';
 import { readCache, readLastApiCallTimestamp, updateApiCallTimestamp, writeCache, shouldRefreshCache } from './cache.js';
 
 export interface ExtraUsageData {
@@ -14,45 +15,66 @@ export interface ExtraUsageData {
 const FETCH_TIMEOUT_MS = 10_000;
 
 /**
+ * Compute keychain service name for a given configDir.
+ * Claude Code uses SHA256(configDir)[0..8] as the suffix.
+ * Returns candidates in priority order: hashed name first, then default.
+ */
+function getKeychainServiceNames(configDir: string): string[] {
+  const hash = createHash('sha256').update(configDir).digest('hex').slice(0, 8);
+  return [`Claude Code-credentials-${hash}`, 'Claude Code-credentials'];
+}
+
+/**
  * Read OAuth access token from macOS Keychain using `security` command.
- * Matches the credential format that Claude Code and claude-nonstop use.
+ * Tries the hashed service name for the given configDir first, then the default.
  */
 function readTokenFromKeychain(configDir: string): string | null {
-  const defaultServiceName = 'Claude Code-credentials';
-  // For now, just try the default service name
-  // TODO: Calculate hash for custom config dirs if needed
+  const serviceNames = getKeychainServiceNames(configDir);
+  const account = userInfo().username;
 
-  try {
-    const raw = execFileSync('security', [
-      'find-generic-password',
-      '-s',
-      defaultServiceName,
-      '-a',
-      userInfo().username,
-      '-w',
-    ], { encoding: 'utf-8', timeout: 5000 }).trim();
-
-    if (!raw) return null;
-
+  for (const serviceName of serviceNames) {
     try {
-      const data = JSON.parse(raw);
-      const token = data?.claudeAiOauth?.accessToken;
-      if (token && typeof token === 'string' && token.startsWith('sk-ant-')) {
-        return token;
+      const raw = execFileSync('security', [
+        'find-generic-password',
+        '-s',
+        serviceName,
+        '-a',
+        account,
+        '-w',
+      ], { encoding: 'utf-8', timeout: 5000 }).trim();
+
+      if (!raw) continue;
+
+      try {
+        const data = JSON.parse(raw);
+        const token = data?.claudeAiOauth?.accessToken;
+        if (token && typeof token === 'string' && token.startsWith('sk-ant-')) {
+          return token;
+        }
+      } catch {
+        if (raw.startsWith('sk-ant-')) return raw;
       }
     } catch {
-      // Not JSON, might be raw token in older format
-      if (raw.startsWith('sk-ant-')) return raw;
+      // Try next service name
     }
-    return null;
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 interface FetchResult {
   data: ExtraUsageData | null;
   isRateLimited: boolean;
+}
+
+function normalizeExtraUsage(raw: any): ExtraUsageData | null {
+  if (!raw || typeof raw.is_enabled !== 'boolean') return null;
+  return {
+    is_enabled: raw.is_enabled,
+    monthly_limit: raw.monthly_limit ?? 0,
+    used_credits: raw.used_credits ?? 0,
+    utilization: raw.utilization ?? 0,
+  };
 }
 
 /**
@@ -141,20 +163,13 @@ export async function getExtraUsage(
   // Decide if we should refresh
   if (!shouldRefreshCache(cache, lastApiCallTs, now)) {
     // Cache is fresh enough, return cached data
-    if (cache?.raw?.extra_usage) {
-      return cache.raw.extra_usage;
-    }
-    return null;
+    return normalizeExtraUsage(cache?.raw?.extra_usage);
   }
 
   // Get token
   const token = readTokenFromKeychain(configDir);
   if (!token) {
-    // Return cached data if available
-    if (cache?.raw?.extra_usage) {
-      return cache.raw.extra_usage;
-    }
-    return null;
+    return normalizeExtraUsage(cache?.raw?.extra_usage);
   }
 
   // Update API call timestamp immediately (before awaiting response)
@@ -170,9 +185,5 @@ export async function getExtraUsage(
   }
 
   // API call failed — return cached data if available
-  if (cache?.raw?.extra_usage) {
-    return cache.raw.extra_usage;
-  }
-
-  return null;
+  return normalizeExtraUsage(cache?.raw?.extra_usage);
 }
