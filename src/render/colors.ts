@@ -278,20 +278,31 @@ export function critical(text: string, colors?: Partial<HudColorOverrides>): str
   return colorize(text, resolveAnsi(colors?.critical, RED));
 }
 
-export function getContextColor(percent: number, colors?: Partial<HudColorOverrides>): string {
-  if (percent >= 85) return resolveAnsi(colors?.critical, RED);
-  if (percent >= 70) return resolveAnsi(colors?.warning, YELLOW);
+export function getContextColorMode(percent: number): 'normal' | 'warning' | 'critical' {
+  if (percent >= 75) return 'critical';
+  if (percent >= 50) return 'warning';
+  return 'normal';
+}
+
+export function getQuotaColorMode(percent: number): 'normal' | 'warning' | 'critical' {
+  if (percent >= 90) return 'critical';
+  if (percent >= 75) return 'warning';
+  return 'normal';
+}
+
+export function getContextColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
+  const mode = colorMode ?? getContextColorMode(percent);
+
+  if (mode === 'critical') return resolveAnsi(colors?.critical, RED);
+  if (mode === 'warning') return resolveAnsi(colors?.warning, YELLOW);
   return resolveAnsi(colors?.context, GREEN);
 }
 
 export function getQuotaColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
-  if (colorMode === 'critical') return resolveAnsi(colors?.critical, RED);
-  if (colorMode === 'warning') return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
-  if (colorMode === 'normal') return resolveAnsi(colors?.usage, BLUE);
+  const mode = colorMode ?? getQuotaColorMode(percent);
 
-  // Default behavior when colorMode is null or undefined
-  if (percent >= 90) return resolveAnsi(colors?.critical, RED);
-  if (percent >= 75) return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
+  if (mode === 'critical') return resolveAnsi(colors?.critical, RED);
+  if (mode === 'warning') return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
   return resolveAnsi(colors?.usage, BLUE);
 }
 
@@ -350,9 +361,9 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
   return result;
 }
 
-export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>): string {
+export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const color = getContextColor(safePercent, colors);
+  const color = getContextColor(safePercent, colors, colorMode);
   return `${color}${buildBar(safePercent, safeWidth)}${RESET}`;
 }
