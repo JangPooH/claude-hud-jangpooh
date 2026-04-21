@@ -208,6 +208,7 @@ const transcriptPath = stdin.transcript_path ?? '';
       thinkingBudget,
       effort,
       sessionDuration,
+      lastUpdateTime: new Date(deps.now()),
       gitStatus,
       usageData,
       memoryUsage,

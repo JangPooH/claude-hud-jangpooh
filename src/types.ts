@@ -137,6 +137,7 @@ export interface RenderContext {
   thinkingBudget: number | null;
   effort: string | null;
   sessionDuration: string;
+  lastUpdateTime: Date;
   gitStatus: GitStatus | null;
   usageData: UsageData | null;
   memoryUsage: MemoryInfo | null;

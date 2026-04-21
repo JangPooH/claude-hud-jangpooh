@@ -207,7 +207,10 @@ export function renderSessionLine(ctx: RenderContext): string {
   }
 
   if (display?.showDuration !== false && ctx.sessionDuration) {
-    parts.push(label(`⏱️  ${ctx.sessionDuration}`, colors));
+    const hh = String(ctx.lastUpdateTime.getHours()).padStart(2, '0');
+    const mm = String(ctx.lastUpdateTime.getMinutes()).padStart(2, '0');
+    const ss = String(ctx.lastUpdateTime.getSeconds()).padStart(2, '0');
+    parts.push(label(`⏱️  ${ctx.sessionDuration} | [${hh}:${mm}:${ss}]`, colors));
   }
 
   if (ctx.extraLabel) {

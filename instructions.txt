@@ -1,0 +1,4 @@
+claude plugin marketplace add /Users/jangpooh/dev/claude-hud-jangpooh
+claude plugin install claude-hud@claude-hud
+claude plugin enable claude-hud@claude-hud
+
