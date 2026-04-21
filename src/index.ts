@@ -168,7 +168,7 @@ const transcriptPath = stdin.transcript_path ?? '';
     if (transcriptPath) {
       writeBaseline(transcriptPath, stdin.cost?.total_cost_usd ?? null, stdin.cost?.total_api_duration_ms ?? null);
     }
-    if (transcriptPath && transcript.turnCosts.length > 0) {
+    if (transcriptPath) {
       writeCostHistory(
         transcriptPath,
         transcript.turnCosts,
@@ -180,6 +180,7 @@ const transcriptPath = stdin.transcript_path ?? '';
         nonstopInfo?.currentAccount ?? null,
         nonstopInfo?.currentAccountType ?? null,
         stdin.cost?.total_api_duration_ms ?? null,
+        stdin.model?.id ?? null,
       );
     }
 

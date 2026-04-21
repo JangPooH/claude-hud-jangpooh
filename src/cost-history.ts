@@ -80,8 +80,9 @@ export function writeCostHistory(
   account?: string | null,
   accountType?: string | null,
   cumApiMs?: number | null,
+  currentModel?: string | null,
 ): void {
-  if (!transcriptPath || turnCosts.length === 0) return;
+  if (!transcriptPath) return;
 
   // Group turnCosts by userTurn (preserving order)
   const byUserTurn = new Map<number, TurnCost[]>();
@@ -103,13 +104,17 @@ export function writeCostHistory(
 
   // cost_history: per user turn aggregate, rewrite each time
   try {
+    const historyPath = getCostHistoryPath(transcriptPath);
+
     // 기존 파일에서 ut별 acct를 읽어둠 (계정이 바뀌어도 과거 턴의 acct 보존)
+    // 첫 줄(# 메타 라인)과 JSON parse 실패 라인은 skip
     const existingAcct = new Map<number, string>();
     const existingAcctType = new Map<number, string>();
+    let existingTurnLines: string[] = [];
     try {
-      const existing = fs.readFileSync(getCostHistoryPath(transcriptPath), 'utf8');
+      const existing = fs.readFileSync(historyPath, 'utf8');
       for (const line of existing.split('\n')) {
-        if (!line.trim()) continue;
+        if (!line.trim() || line.startsWith('#')) continue;
         try {
           const e = JSON.parse(line) as Record<string, unknown>;
           const ut = e['ut'];
@@ -117,7 +122,27 @@ export function writeCostHistory(
           if (typeof ut === 'number' && typeof e['acct_t'] === 'string') existingAcctType.set(ut, e['acct_t'] as string);
         } catch { /* skip malformed */ }
       }
+      // turnCosts가 없을 때 기존 turn 라인 보존용
+      if (turnCosts.length === 0) {
+        existingTurnLines = existing.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+      }
     } catch { /* file doesn't exist yet */ }
+
+    // Line 1: # 메타 라인 — 항상 현재 ts, model, account 반영
+    const metaParts = [
+      ts ?? new Date().toISOString(),
+      currentModel ?? '-',
+      account ?? '-',
+      ...(accountType ? [accountType] : []),
+    ];
+    const metaLine = '# ' + metaParts.join('  ');
+
+    if (turnCosts.length === 0) {
+      // turn 라인은 기존 것 유지하고 메타 라인만 교체
+      const lines = [metaLine, ...existingTurnLines].join('\n') + '\n';
+      fs.writeFileSync(historyPath, lines, 'utf8');
+      return;
+    }
 
     const turnLines = sortedEntries.map(([userTurn, costs]) => {
       const deduped = dedupTurnCosts(costs);
@@ -148,10 +173,12 @@ export function writeCostHistory(
         ...acctForTurn,
       });
     });
-    fs.writeFileSync(getCostHistoryPath(transcriptPath), turnLines.join('\n') + '\n', 'utf8');
+    fs.writeFileSync(historyPath, [metaLine, ...turnLines].join('\n') + '\n', 'utf8');
   } catch {
     // non-fatal
   }
+
+  if (turnCosts.length === 0) return;
 
   // cost_history_detail: per system turn, append-only
   // rct(raw count): 무조건 증가, dedup 키로 사용
