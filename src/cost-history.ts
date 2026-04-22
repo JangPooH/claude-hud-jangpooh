@@ -39,7 +39,7 @@ export function dedupTurnCosts(costs: TurnCost[]): TurnCost[] {
 
 function rateLimitFields(fiveHourPct?: number | null, sevenDayPct?: number | null) {
   return {
-    ...(fiveHourPct != null ? { u5m: fiveHourPct } : {}),
+    ...(fiveHourPct != null ? { u5h: fiveHourPct } : {}),
     ...(sevenDayPct != null ? { u1w: sevenDayPct } : {}),
   };
 }
