@@ -1,10 +1,10 @@
 {
-  "claude-sonnet-4-6": {
-    "inputPerMTok": 3.0,
-    "outputPerMTok": 15.0,
-    "cacheWritePerMTok": 3.75,
-    "cacheWrite1hPerMTok": 6.00,
-    "cacheReadPerMTok": 0.30
+  "claude-opus-4-7": {
+    "inputPerMTok": 5.0,
+    "outputPerMTok": 25.0,
+    "cacheWritePerMTok": 6.25,
+    "cacheWrite1hPerMTok": 10.00,
+    "cacheReadPerMTok": 0.50
   },
   "claude-opus-4-6": {
     "inputPerMTok": 5.0,
@@ -12,6 +12,13 @@
     "cacheWritePerMTok": 6.25,
     "cacheWrite1hPerMTok": 10.00,
     "cacheReadPerMTok": 0.50
+  },
+  "claude-sonnet-4-6": {
+    "inputPerMTok": 3.0,
+    "outputPerMTok": 15.0,
+    "cacheWritePerMTok": 3.75,
+    "cacheWrite1hPerMTok": 6.00,
+    "cacheReadPerMTok": 0.30
   },
   "claude-haiku-4-5-20251001": {
     "inputPerMTok": 1.0,
