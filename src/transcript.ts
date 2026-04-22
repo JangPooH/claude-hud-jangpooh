@@ -54,19 +54,26 @@ interface SerializedAgentEntry extends Omit<AgentEntry, 'startTime' | 'endTime'>
   endTime?: string;
 }
 
+interface SerializedTurnCost extends Omit<import('./types.js').TurnCost, 'timestamp'> {
+  timestamp?: string;
+}
+
 interface SerializedTranscriptData {
   tools: SerializedToolEntry[];
   agents: SerializedAgentEntry[];
   todos: TodoItem[];
   sessionStart?: string;
   sessionName?: string;
-  turnCosts?: TurnCost[];
+  turnCosts?: SerializedTurnCost[];
   sessionCost?: number;
   userTurnCount?: number;
   unknownPricingModels?: string[];
   thinkingBudgetExhaustedAtTurn?: number | null;
   cacheCreation5mTokens?: number;
   cacheCreation1hTokens?: number;
+  lastCacheType?: '5m' | '1h' | null;
+  lastCache5mTime?: string | null;
+  lastCache1hTime?: string | null;
 }
 
 interface TranscriptCacheFile {
@@ -112,13 +119,19 @@ function serializeTranscriptData(data: TranscriptData): SerializedTranscriptData
     todos: data.todos.map((todo) => ({ ...todo })),
     sessionStart: data.sessionStart?.toISOString(),
     sessionName: data.sessionName,
-    turnCosts: data.turnCosts,
+    turnCosts: data.turnCosts.map((turn) => ({
+      ...turn,
+      timestamp: turn.timestamp?.toISOString(),
+    })),
     sessionCost: data.sessionCost,
     userTurnCount: data.userTurnCount,
     unknownPricingModels: data.unknownPricingModels,
     thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn,
     cacheCreation5mTokens: data.cacheCreation5mTokens,
     cacheCreation1hTokens: data.cacheCreation1hTokens,
+    lastCacheType: data.lastCacheType,
+    lastCache5mTime: data.lastCache5mTime?.toISOString() ?? null,
+    lastCache1hTime: data.lastCache1hTime?.toISOString() ?? null,
   };
 }
 
@@ -137,13 +150,19 @@ function deserializeTranscriptData(data: SerializedTranscriptData): TranscriptDa
     todos: data.todos.map((todo) => ({ ...todo })),
     sessionStart: data.sessionStart ? new Date(data.sessionStart) : undefined,
     sessionName: data.sessionName,
-    turnCosts: data.turnCosts ?? [],
+    turnCosts: (data.turnCosts ?? []).map((turn) => ({
+      ...turn,
+      timestamp: turn.timestamp ? new Date(turn.timestamp) : undefined,
+    })),
     sessionCost: data.sessionCost ?? 0,
     userTurnCount: data.userTurnCount ?? 0,
     unknownPricingModels: data.unknownPricingModels ?? [],
     thinkingBudgetExhaustedAtTurn: data.thinkingBudgetExhaustedAtTurn ?? null,
     cacheCreation5mTokens: data.cacheCreation5mTokens ?? 0,
     cacheCreation1hTokens: data.cacheCreation1hTokens ?? 0,
+    lastCacheType: data.lastCacheType ?? null,
+    lastCache5mTime: data.lastCache5mTime ? new Date(data.lastCache5mTime) : null,
+    lastCache1hTime: data.lastCache1hTime ? new Date(data.lastCache1hTime) : null,
   };
 }
 
@@ -193,6 +212,9 @@ export async function parseTranscript(transcriptPath: string): Promise<Transcrip
     thinkingBudgetExhaustedAtTurn: null,
     cacheCreation5mTokens: 0,
     cacheCreation1hTokens: 0,
+    lastCacheType: null,
+    lastCache5mTime: null,
+    lastCache1hTime: null,
   };
 
   if (!transcriptPath || !fs.existsSync(transcriptPath)) {
@@ -315,12 +337,20 @@ function processEntry(
       result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, ...cacheBreakdownFields, cacheReadTokens: cr, cost, userTurn: prev.userTurn, userMessage: prev.userMessage, tools: toolNames.length > 0 ? toolNames : undefined });
     } else {
       const idx = result.turnCosts.length;
-      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, ...cacheBreakdownFields, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined });
+      result.turnCosts.push({ model: entry.message.model, messageId: msgId, inputTokens: inp, outputTokens: out, cacheCreationTokens: cc, ...cacheBreakdownFields, cacheReadTokens: cr, cost, userTurn: result.userTurnCount, userMessage: parseState.pendingUserMessage, tools: toolNames.length > 0 ? toolNames : undefined, timestamp });
       if (msgId) parseState.seenMessageIds.set(msgId, idx);
       parseState.pendingUserMessage = undefined;
       result.sessionCost += cost;
       result.cacheCreation5mTokens += cc5m;
       result.cacheCreation1hTokens += cc1h;
+      if (cc5m > 0) {
+        result.lastCacheType = '5m';
+        result.lastCache5mTime = timestamp;
+      }
+      if (cc1h > 0) {
+        result.lastCacheType = '1h';
+        result.lastCache1hTime = timestamp;
+      }
     }
     if (isUnknown && entry.message.model && !result.unknownPricingModels.includes(entry.message.model) && entry.message.model !== '<synthetic>') {
       result.unknownPricingModels.push(entry.message.model);

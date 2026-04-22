@@ -508,18 +508,43 @@ export function render(ctx: RenderContext): void {
     }
   }
 
-  const cache5m = ctx.transcript.cacheCreation5mTokens;
-  const cache1h = ctx.transcript.cacheCreation1hTokens;
-  const modelId = ctx.stdin?.model?.id ?? '';
-  const isHaiku = modelId.toLowerCase().includes('haiku');
-  const isLowThinking = ctx.thinkingBudget === null || ctx.thinkingBudget < 2000;
-  const isLowEffort = ctx.effort === 'low';
-  if (cache5m > 0 && !isHaiku && !isLowThinking && !isLowEffort) {
+  // Calculate cache tokens from last 1 hour for each type
+  const oneHourMs = 60 * 60 * 1000;
+  let cache5m = 0;
+  let cache1h = 0;
+
+  if (ctx.transcript.lastCache5mTime) {
+    const timeSince5m = Date.now() - ctx.transcript.lastCache5mTime.getTime();
+    if (timeSince5m <= oneHourMs) {
+      // Include all 5m cache created in the last hour from lastCache5mTime
+      cache5m = ctx.transcript.turnCosts.reduce((sum, turn) => {
+        if (!turn.cacheCreation5mTokens) return sum;
+        if (!turn.timestamp || !(turn.timestamp instanceof Date)) return sum + turn.cacheCreation5mTokens;
+        const timeSinceTurn = ctx.transcript.lastCache5mTime!.getTime() - turn.timestamp.getTime();
+        return timeSinceTurn >= 0 && timeSinceTurn <= oneHourMs ? sum + turn.cacheCreation5mTokens : sum;
+      }, 0);
+    }
+  }
+
+  if (ctx.transcript.lastCache1hTime) {
+    const timeSince1h = Date.now() - ctx.transcript.lastCache1hTime.getTime();
+    if (timeSince1h <= oneHourMs) {
+      // Include all 1h cache created in the last hour from lastCache1hTime
+      cache1h = ctx.transcript.turnCosts.reduce((sum, turn) => {
+        if (!turn.cacheCreation1hTokens) return sum;
+        if (!turn.timestamp || !(turn.timestamp instanceof Date)) return sum + turn.cacheCreation1hTokens;
+        const timeSinceTurn = ctx.transcript.lastCache1hTime!.getTime() - turn.timestamp.getTime();
+        return timeSinceTurn >= 0 && timeSinceTurn <= oneHourMs ? sum + turn.cacheCreation1hTokens : sum;
+      }, 0);
+    }
+  }
+
+  if (cache5m > 0) {
     const fmt = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-    const detail = cache1h > 0
-      ? `5m: ${fmt(cache5m)} / 1h: ${fmt(cache1h)}`
-      : `${fmt(cache5m)} tokens`;
-    lines.unshift(warning(`⚠ 5m cache 감지 (${detail}) — cc-cache-fix가 미적용 상태입니다`));
+    const mark5m = ctx.transcript.lastCacheType === '5m' ? '✓' : '';
+    const mark1h = ctx.transcript.lastCacheType === '1h' ? '✓' : '';
+    const detail = `5m: ${fmt(cache5m)} ${mark5m} / 1h: ${fmt(cache1h)} ${mark1h}`;
+    lines.unshift(warning(`⚠ 5m cache 감지 (${detail})`));
   }
 
   const physicalLines = lines.flatMap(line => line.split('\n'));

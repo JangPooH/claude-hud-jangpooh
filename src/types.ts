@@ -103,6 +103,7 @@ export interface TurnCost {
   userTurn?: number;
   userMessage?: string;
   tools?: string[];
+  timestamp?: Date;                 // When this turn was generated
 }
 
 export interface TranscriptData {
@@ -118,6 +119,9 @@ export interface TranscriptData {
   thinkingBudgetExhaustedAtTurn: number | null;
   cacheCreation5mTokens: number;
   cacheCreation1hTokens: number;
+  lastCacheType: '5m' | '1h' | null;  // Most recent cache type created
+  lastCache5mTime: Date | null;       // Last time 5m cache was created
+  lastCache1hTime: Date | null;       // Last time 1h cache was created
 }
 
 export interface RenderContext {
