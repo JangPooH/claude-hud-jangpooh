@@ -397,48 +397,28 @@ function getEnabledPluginKeys(settingsPath: string): Set<string> {
 function getInstalledPlugins(cwd?: string): PluginInfo[] {
   const homeDir = os.homedir();
   const claudeDir = getClaudeConfigDir(homeDir);
-  const installedPluginsPath = path.join(claudeDir, 'plugins', 'installed_plugins.json');
 
-  if (!fs.existsSync(installedPluginsPath)) return [];
-
-  // Collect enabled plugin keys from user settings (and optionally project settings)
-  const enabledKeys = getEnabledPluginKeys(path.join(claudeDir, 'settings.json'));
+  const globalEnabledKeys = getEnabledPluginKeys(path.join(claudeDir, 'settings.json'));
+  const localEnabledKeys = new Set<string>();
   if (cwd) {
     for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.json'))) {
-      enabledKeys.add(key);
+      localEnabledKeys.add(key);
     }
     for (const key of getEnabledPluginKeys(path.join(cwd, '.claude', 'settings.local.json'))) {
-      enabledKeys.add(key);
+      localEnabledKeys.add(key);
     }
   }
 
-  try {
-    const content = fs.readFileSync(installedPluginsPath, 'utf8');
-    const data = JSON.parse(content);
-    if (!data.plugins || typeof data.plugins !== 'object') return [];
+  const allKeys = new Set([...globalEnabledKeys, ...localEnabledKeys]);
+  const result: PluginInfo[] = [];
 
-    const result: PluginInfo[] = [];
-    for (const [key, entries] of Object.entries(data.plugins)) {
-      if (!enabledKeys.has(key)) continue;
-
-      const name = key.split('@')[0];
-      const scopes = new Set<'global' | 'local'>();
-
-      for (const entry of entries as Array<{ scope: string; projectPath?: string }>) {
-        if (entry.scope === 'user') {
-          scopes.add('global');
-        } else if (entry.scope === 'local' && cwd && entry.projectPath === cwd) {
-          scopes.add('local');
-        }
-      }
-
-      if (scopes.size > 0) {
-        result.push({ name, scopes: [...scopes] });
-      }
-    }
-    return result;
-  } catch (error) {
-    debug('Failed to read installed plugins:', error);
-    return [];
+  for (const key of allKeys) {
+    const name = key.split('@')[0];
+    const scopes: ('global' | 'local')[] = [];
+    if (globalEnabledKeys.has(key)) scopes.push('global');
+    if (localEnabledKeys.has(key)) scopes.push('local');
+    result.push({ name, scopes });
   }
+
+  return result;
 }
