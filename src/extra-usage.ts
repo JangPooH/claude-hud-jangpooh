@@ -179,8 +179,13 @@ export async function getExtraUsage(
   const result = await fetchExtraUsageFromAPI(token);
 
   if (result.data) {
-    // Success — cache the full API response with timestamp
-    writeCache(configDir, { extra_usage: result.data }, now);
+    // Success — merge extra_usage with existing cache to preserve five_hour/seven_day
+    const existingCache = readCache(configDir);
+    const mergedRaw = {
+      ...(existingCache?.raw || {}),
+      extra_usage: result.data,
+    };
+    writeCache(configDir, mergedRaw, now);
     return result.data;
   }
 
