@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { userInfo } from 'node:os';
 import { createHash } from 'node:crypto';
 import { readCache, readLastApiCallTimestamp, updateApiCallTimestamp, writeCache, shouldRefreshCache } from './cache.js';
@@ -13,6 +13,31 @@ export interface ExtraUsageData {
 }
 
 const FETCH_TIMEOUT_MS = 10_000;
+
+/**
+ * Log extra usage API errors to {configDir}/usage-api.log
+ */
+function logUsageError(error: string, configDir: string): void {
+  try {
+    const logPath = join(configDir, 'usage-api.log');
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const timestamp = `[${year}-${month}-${day} ${hours}:${minutes}:${seconds}]`;
+    const message = `${timestamp} Usage API error: ${error}\n`;
+    const dir = dirname(logPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    appendFileSync(logPath, message, 'utf-8');
+  } catch {
+    // Silent fail on write error
+  }
+}
 
 /**
  * Compute keychain service name for a given configDir.
@@ -189,6 +214,8 @@ export async function getExtraUsage(
     return result.data;
   }
 
-  // API call failed — return cached data if available
+  // API call failed — log error and return cached data if available
+  const errorMsg = result.isRateLimited ? 'HTTP 429' : 'API call failed';
+  logUsageError(errorMsg, configDir);
   return normalizeExtraUsage(cache?.raw?.extra_usage);
 }
