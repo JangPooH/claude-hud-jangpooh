@@ -20,13 +20,13 @@ function loadPricingTable(): Record<string, ModelPricing> {
     return JSON.parse(raw) as Record<string, ModelPricing>;
   } catch {
     return {
-      'claude-sonnet-4-6': { inputPerMTok: 3.0, outputPerMTok: 15.0, cacheWritePerMTok: 3.75, cacheReadPerMTok: 0.30 },
+      'claude-sonnet-5': { inputPerMTok: 3.0, outputPerMTok: 15.0, cacheWritePerMTok: 3.75, cacheReadPerMTok: 0.30 },
     };
   }
 }
 
 const MODEL_PRICING = loadPricingTable();
-const FALLBACK_MODEL = 'claude-sonnet-4-6';
+const FALLBACK_MODEL = 'claude-sonnet-5';
 
 export function getPricing(modelId: string | undefined): { pricing: ModelPricing; isUnknown: boolean } {
   if (!modelId) return { pricing: MODEL_PRICING[FALLBACK_MODEL], isUnknown: false };

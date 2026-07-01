@@ -1,4 +1,11 @@
 {
+  "claude-sonnet-5": {
+    "inputPerMTok": 3.0,
+    "outputPerMTok": 15.0,
+    "cacheWritePerMTok": 3.75,
+    "cacheWrite1hPerMTok": 6.00,
+    "cacheReadPerMTok": 0.30
+  },
   "claude-opus-4-7": {
     "inputPerMTok": 5.0,
     "outputPerMTok": 25.0,
