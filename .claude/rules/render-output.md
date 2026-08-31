@@ -20,6 +20,7 @@ Lines 1-2 always shown. Additional lines are opt-in via config:
 
 | Threshold | Color | Action |
 |-----------|-------|--------|
-| <70% | Green | Normal |
-| 70-85% | Yellow | Warning |
-| >85% | Red | Show token breakdown |
+| <30% | Green | Normal |
+| 30-49% | Yellow | Warning |
+| 50-74% | Orange | Warning |
+| >=75% | Red | Show token breakdown |

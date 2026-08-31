@@ -278,9 +278,10 @@ export function critical(text: string, colors?: Partial<HudColorOverrides>): str
   return colorize(text, resolveAnsi(colors?.critical, RED));
 }
 
-export function getContextColorMode(percent: number): 'normal' | 'warning' | 'critical' {
+export function getContextColorMode(percent: number): 'normal' | 'warning' | 'orange' | 'critical' {
   if (percent >= 75) return 'critical';
-  if (percent >= 50) return 'warning';
+  if (percent >= 50) return 'orange';
+  if (percent >= 30) return 'warning';
   return 'normal';
 }
 
@@ -290,10 +291,11 @@ export function getQuotaColorMode(percent: number): 'normal' | 'warning' | 'crit
   return 'normal';
 }
 
-export function getContextColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
+export function getContextColor(percent: number, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'orange' | 'critical' | null): string {
   const mode = colorMode ?? getContextColorMode(percent);
 
   if (mode === 'critical') return resolveAnsi(colors?.critical, RED);
+  if (mode === 'orange') return resolveAnsi(colors?.usageWarning, CLAUDE_ORANGE);
   if (mode === 'warning') return resolveAnsi(colors?.warning, YELLOW);
   return resolveAnsi(colors?.context, GREEN);
 }
@@ -361,7 +363,7 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
   return result;
 }
 
-export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
+export function coloredBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'orange' | 'critical' | null): string {
   const safeWidth = Number.isFinite(width) ? Math.max(0, Math.round(width)) : 0;
   const safePercent = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
   const color = getContextColor(safePercent, colors, colorMode);
