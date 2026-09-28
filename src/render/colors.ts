@@ -310,18 +310,24 @@ export function getQuotaColor(percent: number, colors?: Partial<HudColorOverride
 
 const PARTIAL_CHARS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉'];
 
+/** Neutral gray for unfilled bar track, as an explicit color code rather than the \x1b[2m
+ * faint attribute — some terminal renderers render \x1b[2m as indistinguishable from background.
+ * Fixed gray (not hue-preserving) avoids hues like blue reading as much darker than green at the
+ * same HSL lightness (perceptual luminance), which made some tracks disappear into the background. */
+const EMPTY_TRACK = '\x1b[38;5;244m';
+
 function buildBar(percent: number, width: number): string {
   const exact = (percent / 100) * width;
   const full = Math.floor(exact);
   const partialIdx = Math.round((exact - full) * 8);
 
   if (partialIdx === 0) {
-    return '█'.repeat(full) + DIM + '░'.repeat(width - full);
+    return '█'.repeat(full) + EMPTY_TRACK + '░'.repeat(width - full);
   }
   if (partialIdx === 8) {
-    return '█'.repeat(full + 1) + DIM + '░'.repeat(width - full - 1);
+    return '█'.repeat(full + 1) + EMPTY_TRACK + '░'.repeat(width - full - 1);
   }
-  return '█'.repeat(full) + PARTIAL_CHARS[partialIdx] + DIM + '░'.repeat(width - full - 1);
+  return '█'.repeat(full) + PARTIAL_CHARS[partialIdx] + EMPTY_TRACK + '░'.repeat(width - full - 1);
 }
 
 export function quotaBar(percent: number, width: number = 10, colors?: Partial<HudColorOverrides>, colorMode?: 'normal' | 'warning' | 'critical' | null): string {
@@ -357,7 +363,7 @@ export function quotaBarWithTime(percent: number, timePercent: number, width: nu
     } else if (i < usageBlocks) {
       result += `${color}█${RESET}`;
     } else {
-      result += `${DIM}░${RESET}`;
+      result += `${EMPTY_TRACK}░${RESET}`;
     }
   }
   return result;
