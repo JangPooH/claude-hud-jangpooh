@@ -1,4 +1,18 @@
 {
+  "claude-fable-5-1": {
+    "inputPerMTok": 10.0,
+    "outputPerMTok": 50.0,
+    "cacheWritePerMTok": 12.50,
+    "cacheWrite1hPerMTok": 20.00,
+    "cacheReadPerMTok": 0.25
+  },
+  "claude-fable-5": {
+    "inputPerMTok": 10.0,
+    "outputPerMTok": 50.0,
+    "cacheWritePerMTok": 12.50,
+    "cacheWrite1hPerMTok": 20.00,
+    "cacheReadPerMTok": 1.00
+  },
   "claude-sonnet-5-5": {
     "inputPerMTok": 2.0,
     "outputPerMTok": 10.0,
